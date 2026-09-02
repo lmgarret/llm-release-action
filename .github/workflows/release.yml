@@ -91,11 +91,21 @@ jobs:
             --title "Release $VERSION" \
             --notes "$CHANGELOG"
 
-          # Update floating v1 tag to point to this release
-          git tag -f v1
-          git push origin v1 --force
-
           echo "## Release Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Created release: $VERSION" >> $GITHUB_STEP_SUMMARY
-          echo "Updated v1 tag to point to $VERSION" >> $GITHUB_STEP_SUMMARY
+
+          # Update the floating major tag so consumers pinned to the major get
+          # this release. Derived from the version rather than hardcoded, so a
+          # v0.x release moves v0 and a v2.0.0 release moves v2 -- hardcoding v1
+          # made every release claim to be v1.
+          MAJOR="${VERSION%%.*}"
+
+          # A prerelease must not become what the floating major tag points at.
+          if [ "$VERSION" != "${VERSION%-*}" ]; then
+            echo "Prerelease - $MAJOR tag left unchanged" >> $GITHUB_STEP_SUMMARY
+          else
+            git tag -f "$MAJOR"
+            git push origin "$MAJOR" --force
+            echo "Updated $MAJOR tag to point to $VERSION" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -93,7 +93,7 @@ Related work is consolidated into a single, complete entry.
   with:
     fetch-depth: 0  # Required: full git history for commit analysis
 
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   id: release
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
@@ -387,7 +387,7 @@ jobs:
         with:
           fetch-depth: 0  # Required for full history
 
-      - uses: nosovj/llm-release-action@v1
+      - uses: lmgarret/llm-release-action@v1
         id: release
         with:
           model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
@@ -407,7 +407,7 @@ jobs:
 Generate different changelogs for different audiences:
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   id: release
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
@@ -438,7 +438,7 @@ Generate different changelogs for different audiences:
 Use a smarter model for analysis, faster model for changelogs:
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
     model_analysis: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
@@ -448,7 +448,7 @@ Use a smarter model for analysis, faster model for changelogs:
 ### With OpenAI
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   with:
     model: openai/gpt-4o-mini
   env:
@@ -458,7 +458,7 @@ Use a smarter model for analysis, faster model for changelogs:
 ### With Anthropic Direct
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   with:
     model: anthropic/claude-sonnet-4-5-20250929
   env:
@@ -468,7 +468,7 @@ Use a smarter model for analysis, faster model for changelogs:
 ### Monitor LLM Costs
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   id: release
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
@@ -663,7 +663,7 @@ With context files, you can explicitly define:
 ### Basic Usage
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
     context_files: README.md,docs/ARCHITECTURE.md
@@ -769,7 +769,7 @@ The `analyze_diffs` input enables structured semantic extraction from file diffs
 ### Basic Usage
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
     analyze_diffs: true
@@ -780,7 +780,7 @@ The `analyze_diffs` input enables structured semantic extraction from file diffs
 By default, low-signal files are excluded (lock files, vendor directories, generated code). You can customize this:
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
     analyze_diffs: true
@@ -867,7 +867,7 @@ Enabling `analyze_diffs` adds LLM calls for the MAP phase:
 
 **Cost optimization example:**
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   with:
     model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
     model_analysis: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0  # Cheaper for diff analysis
@@ -880,7 +880,7 @@ Enabling `analyze_diffs` adds LLM calls for the MAP phase:
 Both features can be enabled together for maximum accuracy:
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
     context_files: README.md,docs/API.md
@@ -967,7 +967,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Analyze combined changes
-      - uses: nosovj/llm-release-action@v1
+      - uses: lmgarret/llm-release-action@v1
         id: release
         with:
           model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
@@ -1171,7 +1171,7 @@ validation_model: openai/gpt-4o-mini
 If no semver tags exist in your repository, you must provide `current_version`:
 
 ```yaml
-- uses: nosovj/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v1
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
     current_version: v0.0.0  # Start from v0.0.0 for first release
