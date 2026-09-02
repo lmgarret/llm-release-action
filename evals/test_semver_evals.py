@@ -15,7 +15,7 @@ from deepeval.models import DeepEvalBaseLLM
 
 from prompt_builder import build_semantic_analysis_prompt, CommitInfo
 from analyzer import parse_phase1_response
-from conftest import get_test_model, get_eval_model
+from conftest import get_test_model, get_eval_model, completion_kwargs
 
 pytestmark = [
     pytest.mark.eval,
@@ -34,10 +34,8 @@ class BedrockLLM(DeepEvalBaseLLM):
 
     def generate(self, prompt: str) -> str:
         response = litellm.completion(
-            model=self._model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=1000,
+            **completion_kwargs(self._model, temperature=0.0, max_tokens=1000),
         )
         return response.choices[0].message.content
 
@@ -51,10 +49,8 @@ class BedrockLLM(DeepEvalBaseLLM):
 def call_llm(prompt: str) -> str:
     """Call LLM via LiteLLM (uses Haiku 4.5 for testing)."""
     response = litellm.completion(
-        model=get_test_model(),
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=2000,
+        **completion_kwargs(get_test_model(), temperature=0.2, max_tokens=2000),
     )
     return response.choices[0].message.content
 

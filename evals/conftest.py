@@ -8,6 +8,8 @@ import pytest
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from model_capabilities import supports_sampling_params  # noqa: E402
+
 # Model configuration:
 # - EVAL_MODEL: Sonnet 4.5 for judging output quality (smarter)
 # - TEST_MODEL: Haiku 4.5 for analysis/changelog generation (what we're testing)
@@ -30,3 +32,15 @@ def get_eval_model() -> str:
 def get_test_model() -> str:
     """Get model for generating outputs (what we're testing)."""
     return os.environ.get("TEST_MODEL", DEFAULT_TEST_MODEL)
+
+
+def completion_kwargs(model: str, temperature: float, max_tokens: int) -> dict:
+    """Build litellm.completion kwargs, omitting params the model rejects.
+
+    Lets EVAL_MODEL / TEST_MODEL point at a model that has removed sampling
+    parameters without editing every call site.
+    """
+    kwargs = {"model": model, "max_tokens": max_tokens}
+    if supports_sampling_params(model):
+        kwargs["temperature"] = temperature
+    return kwargs

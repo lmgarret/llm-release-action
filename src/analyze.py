@@ -13,7 +13,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import litellm
 
@@ -71,6 +71,9 @@ class AggregateUsage:
 # Global usage tracker
 _usage = AggregateUsage()
 
+# Warnings already emitted, so a fan-out phase does not repeat one per thread.
+_warned: set = set()
+
 from analyzer import parse_phase1_response
 from changelog import build_changelog_prompt, filter_changes, generate_changelog
 from config import AudienceConfig, ChangelogConfig
@@ -89,6 +92,11 @@ from content_scanner import (
 from flatten import flatten_changes
 from input_validation import validate_inputs
 from map_reduce import determine_version_from_changes, process_large_input
+from model_capabilities import (
+    min_max_tokens,
+    resolve_thinking_param,
+    supports_sampling_params,
+)
 from model_config import ModelConfig
 from models import AnalysisResult, Change, ChangeStats, ReleaseMetadata
 from prompt_builder import (
@@ -141,6 +149,49 @@ def get_env_float(name: str, default: float) -> float:
         raise ValueError(f"Invalid float value for {name}: {value}") from e
 
 
+def get_env_optional_float(name: str, default: float) -> Optional[float]:
+    """Get environment variable as float, treating an empty value as unset.
+
+    An explicitly empty input means "omit this parameter" -- the escape hatch
+    for a model that rejects it and that model_capabilities does not know about
+    yet.
+    """
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    if value.strip() == "":
+        return None
+    try:
+        return float(value)
+    except ValueError as e:
+        raise ValueError(f"Invalid float value for {name}: {value}") from e
+
+
+def parse_extra_llm_params(raw: str) -> Optional[Dict[str, Any]]:
+    """Parse the extra_llm_params input into a kwargs dict.
+
+    Args:
+        raw: JSON object string, or empty
+
+    Returns:
+        Parsed dict, or None when unset
+
+    Raises:
+        ValueError: If the value is not a JSON object
+    """
+    if not raw or not raw.strip():
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in extra_llm_params: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"extra_llm_params must be a JSON object, got {type(parsed).__name__}"
+        )
+    return parsed
+
+
 def log_group(title: str) -> None:
     """Start a GitHub Actions log group."""
     print(f"::group::{title}")
@@ -161,6 +212,17 @@ def log_warning(message: str) -> None:
     print(f"::warning::{message}")
 
 
+def warn_once(message: str) -> None:
+    """Log a warning at most once per run.
+
+    Phase 2 fans out across up to 10 threads and the map phase across 5, so an
+    unguarded per-call warning would repeat a dozen times.
+    """
+    if message not in _warned:
+        _warned.add(message)
+        log_warning(message)
+
+
 def set_output(name: str, value: str) -> None:
     """Set a GitHub Actions output."""
     github_output = os.environ.get("GITHUB_OUTPUT")
@@ -178,14 +240,74 @@ def set_output(name: str, value: str) -> None:
         print(f"OUTPUT {name}={preview}")
 
 
+def build_completion_kwargs(
+    model: str,
+    prompt: str,
+    temperature: Optional[float],
+    max_tokens: int,
+    timeout: int,
+    thinking: str = "",
+    extra_params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the kwargs for a litellm.completion call for this model.
+
+    Parameters that the model does not accept are omitted rather than sent and
+    rejected. Newer Anthropic models removed temperature/top_p/top_k, and run
+    thinking by default -- thinking tokens come out of max_tokens, so those
+    models also need an output floor or they return empty content.
+
+    Args:
+        model: LiteLLM model string
+        prompt: User prompt
+        temperature: Sampling temperature, or None to omit it
+        max_tokens: Requested response token cap (raised to the model's floor)
+        timeout: Request timeout in seconds
+        thinking: "", "adaptive" or "off"
+        extra_params: Raw passthrough merged last, so it can override anything
+
+    Returns:
+        Keyword arguments for litellm.completion
+    """
+    kwargs: Dict[str, Any] = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max(max_tokens, min_max_tokens(model, thinking)),
+        "timeout": timeout,
+    }
+
+    if temperature is not None:
+        if supports_sampling_params(model):
+            kwargs["temperature"] = temperature
+        else:
+            warn_once(
+                f"Model '{model}' does not accept `temperature`; ignoring it. "
+                f"Use the `thinking` input to tune this model instead."
+            )
+
+    thinking_param = resolve_thinking_param(model, thinking)
+    if thinking_param is not None:
+        kwargs["thinking"] = thinking_param
+    elif thinking:
+        warn_once(
+            f"Model '{model}' does not support `thinking: {thinking}`; ignoring it."
+        )
+
+    if extra_params:
+        kwargs.update(extra_params)
+
+    return kwargs
+
+
 def call_llm_with_retry(
     model: str,
     prompt: str,
-    temperature: float,
+    temperature: Optional[float],
     max_tokens: int,
     timeout: int,
     max_retries: int = 3,
     debug: bool = False,
+    thinking: str = "",
+    extra_params: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, LLMUsage]:
     """Call LLM with exponential backoff retry.
 
@@ -197,18 +319,22 @@ def call_llm_with_retry(
         print(prompt)
         log_group_end()
 
+    completion_kwargs = build_completion_kwargs(
+        model=model,
+        prompt=prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        thinking=thinking,
+        extra_params=extra_params,
+    )
+
     last_error = None
     for attempt in range(max_retries):
         try:
             start_time = time.perf_counter()
 
-            response = litellm.completion(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-            )
+            response = litellm.completion(**completion_kwargs)
 
             latency_ms = (time.perf_counter() - start_time) * 1000
 
@@ -339,7 +465,7 @@ def run_phase1(
     max_commits: int,
     include_diffs: str,
     head_ref: str,
-    temperature: float,
+    temperature: Optional[float],
     max_tokens: int,
     timeout: int,
     debug: bool,
@@ -347,6 +473,8 @@ def run_phase1(
     validation_model: Optional[str] = None,
     context_content: Optional[str] = None,
     diff_analysis_content: Optional[str] = None,
+    thinking: str = "",
+    extra_params: Optional[Dict[str, Any]] = None,
 ) -> AnalysisResult:
     """Run Phase 1: Semantic Analysis.
 
@@ -361,7 +489,7 @@ def run_phase1(
         max_commits: Max commits to include
         include_diffs: Comma-separated file patterns for diffs
         head_ref: Head git ref
-        temperature: LLM temperature
+        temperature: LLM temperature, or None to omit the parameter
         max_tokens: Max response tokens
         timeout: Request timeout
         debug: Enable debug logging
@@ -391,6 +519,8 @@ def run_phase1(
                 max_tokens=max_tokens,
                 timeout=timeout,
                 debug=debug,
+                thinking=thinking,
+                extra_params=extra_params,
             )
             return response
 
@@ -403,6 +533,8 @@ def run_phase1(
                 max_tokens=8000,  # Higher limit for reduce phase
                 timeout=timeout,
                 debug=debug,
+                thinking=thinking,
+                extra_params=extra_params,
             )
             return response
 
@@ -456,6 +588,8 @@ def run_phase1(
                         max_tokens=10,  # Only need YES/NO
                         timeout=30,  # Shorter timeout for validation
                         debug=debug,
+                        thinking=thinking,
+                        extra_params=extra_params,
                     )
                     return response
 
@@ -480,6 +614,8 @@ def run_phase1(
                     max_tokens=10,
                     timeout=30,
                     debug=debug,
+                    thinking=thinking,
+                    extra_params=extra_params,
                 )
                 return response
 
@@ -502,6 +638,8 @@ def run_phase1(
                 max_tokens=max_tokens,
                 timeout=timeout,
                 debug=debug,
+                thinking=thinking,
+                extra_params=extra_params,
             )
             return response
 
@@ -537,6 +675,8 @@ def run_phase1(
                     max_tokens=max_tokens,
                     timeout=timeout,
                     debug=debug,
+                    thinking=thinking,
+                    extra_params=extra_params,
                 )
                 return response
 
@@ -604,6 +744,8 @@ def run_phase1(
         max_tokens=max_tokens,
         timeout=timeout,
         debug=debug,
+        thinking=thinking,
+        extra_params=extra_params,
     )
 
     # Parse response
@@ -625,10 +767,12 @@ def run_phase2(
     changelog_config: ChangelogConfig,
     version: str,
     base_url: Optional[str],
-    temperature: float,
+    temperature: Optional[float],
     max_tokens: int,
     timeout: int,
     debug: bool,
+    thinking: str = "",
+    extra_params: Optional[Dict[str, Any]] = None,
 ) -> tuple[Dict[str, Dict[str, str]], Dict[str, Dict[str, dict]]]:
     """Run Phase 2: Changelog Generation (parallel execution).
 
@@ -638,7 +782,7 @@ def run_phase2(
         changelog_config: Audience configurations
         version: Version string for the release
         base_url: Optional repository URL for links
-        temperature: LLM temperature
+        temperature: LLM temperature, or None to omit the parameter
         max_tokens: Max response tokens
         timeout: Request timeout
         debug: Enable debug logging
@@ -706,6 +850,8 @@ default:
             max_tokens=max_tokens,
             timeout=timeout,
             debug=debug,
+            thinking=thinking,
+            extra_params=extra_params,
         )
 
         # Extract changelog and metadata from response
@@ -856,9 +1002,12 @@ def main() -> int:
         head_ref = get_env("INPUT_HEAD_REF", "HEAD")
         include_diffs = get_env("INPUT_INCLUDE_DIFFS", "**/openapi*.yaml,**/migrations/**,**/*.proto")
         max_commits = get_env_int("INPUT_MAX_COMMITS", 50)
-        temperature = get_env_float("INPUT_TEMPERATURE", 0.2)
+        temperature = get_env_optional_float("INPUT_TEMPERATURE", 0.2)
         max_tokens = get_env_int("INPUT_MAX_TOKENS", 4000)
         timeout = get_env_int("INPUT_TIMEOUT", 120)
+        temperature_str = os.environ.get("INPUT_TEMPERATURE", "")
+        thinking = os.environ.get("INPUT_THINKING", "").strip().lower()
+        extra_llm_params_str = os.environ.get("INPUT_EXTRA_LLM_PARAMS", "")
         dry_run = get_env_bool("INPUT_DRY_RUN", False)
         content_override = os.environ.get("INPUT_CONTENT_OVERRIDE", "")
         changelog_config_str = os.environ.get("INPUT_CHANGELOG_CONFIG", "")
@@ -903,6 +1052,9 @@ def main() -> int:
             diff_exclude_patterns=diff_exclude_patterns if diff_exclude_patterns else None,
             diff_max_files=str(diff_max_files),
             diff_max_total_lines=str(diff_max_total_lines),
+            temperature=temperature_str,
+            thinking=thinking,
+            extra_llm_params=extra_llm_params_str,
         )
 
         if not validation_result.valid:
@@ -912,6 +1064,9 @@ def main() -> int:
 
         print("Inputs validated successfully")
         log_group_end()
+
+        # Safe to parse now that validate_inputs has vetted the JSON
+        extra_llm_params = parse_extra_llm_params(extra_llm_params_str)
 
         # Parse changelog config
         changelog_config = ChangelogConfig.from_yaml(changelog_config_str)
@@ -985,6 +1140,8 @@ def main() -> int:
                     max_tokens=2000,
                     timeout=timeout,
                     debug=debug,
+                    thinking=thinking,
+                    extra_params=extra_llm_params,
                 )
                 return response
 
@@ -1037,6 +1194,8 @@ def main() -> int:
                             max_tokens=2000,
                             timeout=timeout,
                             debug=debug,
+                            thinking=thinking,
+                            extra_params=extra_llm_params,
                         )
                         return response
 
@@ -1082,6 +1241,8 @@ def main() -> int:
             validation_model=validation_model,
             context_content=context_content,
             diff_analysis_content=diff_analysis_content,
+            thinking=thinking,
+            extra_params=extra_llm_params,
         )
 
         # === Staleness Detection ===
@@ -1123,6 +1284,8 @@ def main() -> int:
             max_tokens=max_tokens,
             timeout=timeout,
             debug=debug,
+            thinking=thinking,
+            extra_params=extra_llm_params,
         )
 
         # === PHASE 3: Validation ===

@@ -121,8 +121,10 @@ Related work is consolidated into a single, complete entry.
 | `head_ref` | No | `HEAD` | Head ref to compare to |
 | `include_diffs` | No | `**/openapi*.yaml,**/migrations/**,**/*.proto` | File patterns for diff analysis (comma-separated globs) |
 | `max_commits` | No | `50` | Max recent commits to include in full (rest summarized) |
-| `temperature` | No | `0.2` | LLM temperature (lower = more deterministic) |
-| `max_tokens` | No | `4000` | Max tokens in LLM response |
+| `temperature` | No | `0.2` | LLM temperature (lower = more deterministic). Set to an empty string to omit the parameter. Automatically ignored on models that have removed sampling parameters. See [Newer Anthropic models](#newer-anthropic-models). |
+| `thinking` | No | - | Extended thinking mode: empty (model default), `adaptive` (enable), or `off` (disable). Anthropic models only. |
+| `extra_llm_params` | No | - | JSON object of extra parameters merged into every LLM call, e.g. `{"reasoning_effort": "low"}`. Escape hatch for provider parameters the action does not model. |
+| `max_tokens` | No | `4000` | Max tokens in LLM response. Raised automatically to at least 4096 when thinking is on, since thinking tokens come out of this budget. |
 | `timeout` | No | `120` | Request timeout in seconds |
 | `debug` | No | `false` | Enable verbose debug logging |
 | `dry_run` | No | `false` | Perform analysis without suggesting version |
@@ -1024,8 +1026,8 @@ The action is conservative about version bumps:
 
 Any LLM provider supported by [LiteLLM](https://docs.litellm.ai/docs/providers):
 
-- **AWS Bedrock**: `bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0`, `bedrock/us.amazon.nova-pro-v1:0`
-- **Anthropic**: `anthropic/claude-sonnet-4-5-20250929`, `anthropic/claude-haiku-4-5-20251022`
+- **AWS Bedrock**: `bedrock/us.anthropic.claude-sonnet-5-v1:0`, `bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0`, `bedrock/us.amazon.nova-pro-v1:0`
+- **Anthropic**: `anthropic/claude-sonnet-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-4-5-20250929`
 - **OpenAI**: `openai/gpt-4o-mini`, `openai/gpt-4o`, `openai/gpt-4.1`
 - **Azure OpenAI**: `azure/<deployment-name>`
 - And many more...
@@ -1036,8 +1038,8 @@ For best changelog quality, use **Sonnet-class or equivalent models**:
 
 | Provider | Recommended Models | Notes |
 |----------|-------------------|-------|
-| AWS Bedrock | `claude-sonnet-4-5-*`, `nova-pro-v1` | Best instruction following |
-| Anthropic | `claude-sonnet-4-5-*`, `claude-sonnet-4-*` | Excellent formatting |
+| AWS Bedrock | `claude-sonnet-5`, `claude-sonnet-4-5-*`, `nova-pro-v1` | Best instruction following |
+| Anthropic | `claude-sonnet-5`, `claude-opus-5`, `claude-sonnet-4-5-*` | Excellent formatting |
 | OpenAI | `gpt-4.1`, `gpt-4o` | Good quality output |
 
 **Smaller models** (Haiku 4.5, Nova Lite, GPT-4.1-mini) are faster and cheaper but may:
@@ -1045,7 +1047,40 @@ For best changelog quality, use **Sonnet-class or equivalent models**:
 - Produce redundant title/description pairs
 - Miss nuanced changelog transformations
 
-**Recommendation**: Use a capable model like Sonnet 4.5 or Nova Pro for `model_changelog`, and optionally a faster model for `model_analysis` if cost is a concern.
+**Recommendation**: Use a capable model like Sonnet 5 or Nova Pro for `model_changelog`, and optionally a faster model for `model_analysis` if cost is a concern.
+
+### Newer Anthropic models
+
+Sonnet 5, Opus 5, Opus 4.7/4.8 and the Fable/Mythos families **removed the sampling
+parameters**. Sending `temperature`, `top_p` or `top_k` to them returns
+`` `temperature` is deprecated for this model. `` The action detects these models and
+omits the parameter, printing a warning; you do not need to change your `temperature`
+input when you switch models.
+
+Two consequences worth knowing:
+
+- **`temperature` is inert on these models.** There is no equivalent knob -- use
+  `thinking` (or `extra_llm_params` with `reasoning_effort`) to tune them instead. The
+  action's internal `temperature: 0.0` calls (injection validation, context
+  summarization, diff extraction) lose their determinism hint on these models; the
+  prompts themselves constrain the output shape.
+- **Thinking tokens come out of `max_tokens`.** Sonnet 5, Opus 5 and Fable/Mythos think
+  by default, so a small `max_tokens` yields empty content rather than a short answer.
+  The action raises `max_tokens` to at least 4096 on those models. Opus 4.7 and 4.8
+  reject sampling parameters but do *not* think unless you set `thinking: adaptive`.
+
+```yaml
+- uses: lmgarret/llm-release-action@v1
+  with:
+    model: anthropic/claude-sonnet-5
+    thinking: adaptive          # explicit; needed on Opus 4.7/4.8
+    max_tokens: '8000'          # room for thinking plus the changelog
+```
+
+If a *future* model starts rejecting a parameter before the action knows about it, you
+have two escape hatches that need no code change: set `temperature: ''` to omit it, and
+use `extra_llm_params` to force any parameter you do need (it is merged last, so it
+overrides the action's own choices).
 
 ## Evals
 

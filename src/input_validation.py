@@ -4,6 +4,7 @@ All inputs are validated BEFORE any LLM calls. If validation fails,
 the action fails fast with clear error messages.
 """
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -514,6 +515,82 @@ def validate_diff_max_total_lines(value: str) -> List[str]:
     return errors
 
 
+VALID_THINKING_MODES = ("", "adaptive", "off")
+
+
+def validate_temperature(value: str) -> List[str]:
+    """Validate temperature input.
+
+    Args:
+        value: String value from action input
+
+    Returns:
+        List of validation errors (empty if valid)
+    """
+    errors = []
+
+    if not value or not value.strip():
+        return errors  # Empty omits the parameter
+
+    try:
+        temperature = float(value)
+        if not 0.0 <= temperature <= 2.0:
+            errors.append(
+                f"temperature must be between 0.0 and 2.0, got {temperature}"
+            )
+    except ValueError:
+        errors.append(f"temperature must be a number, got '{value}'")
+
+    return errors
+
+
+def validate_thinking(value: str) -> List[str]:
+    """Validate thinking input.
+
+    Args:
+        value: String value from action input
+
+    Returns:
+        List of validation errors (empty if valid)
+    """
+    errors = []
+
+    normalized = (value or "").strip().lower()
+    if normalized not in VALID_THINKING_MODES:
+        valid = ", ".join(m or "(empty)" for m in VALID_THINKING_MODES)
+        errors.append(f"Invalid thinking mode: '{value}'. Valid values: {valid}")
+
+    return errors
+
+
+def validate_extra_llm_params(value: str) -> List[str]:
+    """Validate extra_llm_params input.
+
+    Args:
+        value: JSON object string from action input
+
+    Returns:
+        List of validation errors (empty if valid)
+    """
+    errors = []
+
+    if not value or not value.strip():
+        return errors  # Empty sends nothing extra
+
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as e:
+        errors.append(f"extra_llm_params must be valid JSON: {e}")
+        return errors
+
+    if not isinstance(parsed, dict):
+        errors.append(
+            f"extra_llm_params must be a JSON object, got {type(parsed).__name__}"
+        )
+
+    return errors
+
+
 def validate_inputs(
     current_version: Optional[str] = None,
     head_ref: Optional[str] = None,
@@ -527,6 +604,9 @@ def validate_inputs(
     diff_exclude_patterns: Optional[str] = None,
     diff_max_files: Optional[str] = None,
     diff_max_total_lines: Optional[str] = None,
+    temperature: Optional[str] = None,
+    thinking: Optional[str] = None,
+    extra_llm_params: Optional[str] = None,
 ) -> InputValidationResult:
     """Validate all action inputs before processing.
 
@@ -543,6 +623,9 @@ def validate_inputs(
         diff_exclude_patterns: Comma-separated gitignore-style patterns for diff exclusion
         diff_max_files: Maximum number of files to include in diff analysis
         diff_max_total_lines: Maximum total lines of diff content
+        temperature: LLM temperature (empty omits the parameter)
+        thinking: Thinking mode ('', 'adaptive' or 'off')
+        extra_llm_params: JSON object of extra litellm.completion kwargs
 
     Returns:
         InputValidationResult with valid flag and errors list
@@ -619,6 +702,16 @@ def validate_inputs(
 
     if diff_max_total_lines:
         errors.extend(validate_diff_max_total_lines(diff_max_total_lines))
+
+    # LLM parameter validation
+    if temperature:
+        errors.extend(validate_temperature(temperature))
+
+    if thinking:
+        errors.extend(validate_thinking(thinking))
+
+    if extra_llm_params:
+        errors.extend(validate_extra_llm_params(extra_llm_params))
 
     return InputValidationResult(valid=len(errors) == 0, errors=errors)
 

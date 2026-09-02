@@ -8,7 +8,7 @@ branding:
 
 inputs:
   model:
-    description: 'Default LiteLLM model string (e.g., anthropic/claude-3-haiku-20240307)'
+    description: 'Default LiteLLM model string (e.g., anthropic/claude-sonnet-5)'
     required: true
   model_analysis:
     description: 'Optional model for Phase 1 semantic analysis. Falls back to model if not set.'
@@ -34,9 +34,17 @@ inputs:
     required: false
     default: '50'
   temperature:
-    description: 'LLM temperature (0.0-2.0)'
+    description: 'LLM temperature (0.0-2.0). Leave empty to omit the parameter entirely - required for models that have removed sampling parameters. Automatically ignored for models known to reject it.'
     required: false
     default: '0.2'
+  thinking:
+    description: "Extended thinking mode: '' (leave to the model's default), 'adaptive' (enable - needed on Opus 4.7/4.8, which do not think unless asked), or 'off'. Anthropic models only."
+    required: false
+    default: ''
+  extra_llm_params:
+    description: 'JSON object of extra parameters merged into every LLM call, e.g. ''{"reasoning_effort": "low"}''. Escape hatch for provider parameters the action does not model; merged last, so it overrides the action''s own choices.'
+    required: false
+    default: ''
   max_tokens:
     description: 'Maximum tokens in LLM response'
     required: false
@@ -154,6 +162,8 @@ runs:
         INPUT_INCLUDE_DIFFS: ${{ inputs.include_diffs }}
         INPUT_MAX_COMMITS: ${{ inputs.max_commits }}
         INPUT_TEMPERATURE: ${{ inputs.temperature }}
+        INPUT_THINKING: ${{ inputs.thinking }}
+        INPUT_EXTRA_LLM_PARAMS: ${{ inputs.extra_llm_params }}
         INPUT_MAX_TOKENS: ${{ inputs.max_tokens }}
         INPUT_TIMEOUT: ${{ inputs.timeout }}
         INPUT_DEBUG: ${{ inputs.debug }}
