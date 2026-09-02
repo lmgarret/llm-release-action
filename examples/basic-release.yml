@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0  # Required for full git history
 
-      - uses: nosovj/llm-release-action@v1
+      - uses: lmgarret/llm-release-action@v1
         id: release
         with:
           model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
