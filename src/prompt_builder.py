@@ -77,8 +77,31 @@ def has_breaking_change(message: str) -> bool:
     return False
 
 
+def ref_exists(ref: str) -> bool:
+    """Check whether a git ref resolves to a commit.
+
+    Args:
+        ref: Reference to check (tag, branch or commit)
+
+    Returns:
+        True if the ref resolves, False otherwise
+    """
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
 def get_commits(base_ref: str, head_ref: str = "HEAD") -> List[CommitInfo]:
     """Get commits between two refs.
+
+    `base_ref` doubles as the semver baseline elsewhere, and on a repository's
+    first release there is no tag to diff from -- callers pass a synthetic
+    "v0.0.0" that is a valid version but not a valid ref. When the base does
+    not resolve, walk the full history of `head_ref` instead of failing, so the
+    first release sees every commit.
 
     Args:
         base_ref: Base reference (tag or commit)
@@ -90,13 +113,22 @@ def get_commits(base_ref: str, head_ref: str = "HEAD") -> List[CommitInfo]:
     Raises:
         RuntimeError: If git command fails
     """
+    if ref_exists(base_ref):
+        rev_range = f"{base_ref}..{head_ref}"
+    else:
+        rev_range = head_ref
+        print(
+            f"Base ref '{base_ref}' does not exist - treating this as the first "
+            f"release and using the full history of {head_ref}"
+        )
+
     try:
         # Use %x00 as delimiter for parsing
         result = subprocess.run(
             [
                 "git",
                 "log",
-                f"{base_ref}..{head_ref}",
+                rev_range,
                 "--format=%H%x00%B%x00%x01",
             ],
             capture_output=True,
