@@ -42,6 +42,7 @@ from content_scanner import (
     parse_validation_mode,
     ThreatLevel,
 )
+from model_capabilities import min_max_tokens, supports_sampling_params
 
 
 # Model configuration
@@ -53,13 +54,16 @@ AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 def call_llm(prompt: str) -> str:
     """Call LLM using LiteLLM."""
-    response = litellm.completion(
-        model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.0,
-        max_tokens=50,
-        aws_region_name=AWS_REGION,
-    )
+    kwargs = {
+        "model": MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max(50, min_max_tokens(MODEL)),
+        "aws_region_name": AWS_REGION,
+    }
+    if supports_sampling_params(MODEL):
+        kwargs["temperature"] = 0.0
+
+    response = litellm.completion(**kwargs)
     return response.choices[0].message.content
 
 

@@ -11,7 +11,13 @@ import pytest
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from analyze import main, call_llm_with_retry, sanitize_changelog
+from analyze import (
+    main,
+    build_completion_kwargs,
+    call_llm_with_retry,
+    parse_extra_llm_params,
+    sanitize_changelog,
+)
 from version import parse_version
 from parser import parse_response
 from prompt_builder import build_prompt, CommitInfo
@@ -378,3 +384,184 @@ class TestParseCommitsJson:
         assert "<script>" not in commits[0].message
         assert "add" in commits[0].message
         assert "feature" in commits[0].message
+
+
+# Models used across the kwargs tests
+NEW_MODEL = "anthropic/claude-sonnet-5"          # rejects sampling, thinks by default
+OLD_MODEL = "anthropic/claude-sonnet-4-5-20250929"  # accepts sampling, no thinking
+NO_THINK_MODEL = "anthropic/claude-opus-4-7"     # rejects sampling, no thinking
+
+
+def _mock_response(content="ok"):
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.content = content
+    response.usage.prompt_tokens = 1
+    response.usage.completion_tokens = 1
+    response.usage.total_tokens = 2
+    return response
+
+
+def _forwarded_kwargs(**call_kwargs):
+    """Call the wrapper and return the kwargs it actually forwarded to litellm."""
+    mock_completion = MagicMock(return_value=_mock_response())
+    call_kwargs.setdefault("prompt", "test prompt")
+    call_kwargs.setdefault("timeout", 30)
+    with patch("analyze.litellm.completion", mock_completion):
+        call_llm_with_retry(**call_kwargs)
+    return mock_completion.call_args.kwargs
+
+
+class TestCompletionKwargs:
+    """The parameters actually forwarded to litellm.completion.
+
+    These assertions are the gap that let the `temperature is deprecated`
+    failure ship: the existing retry tests never inspected call_args.
+    """
+
+    def test_temperature_dropped_for_new_model(self):
+        kwargs = _forwarded_kwargs(model=NEW_MODEL, temperature=0.2, max_tokens=4000)
+        assert "temperature" not in kwargs
+        assert kwargs["model"] == NEW_MODEL
+
+    def test_temperature_kept_for_older_model(self):
+        kwargs = _forwarded_kwargs(model=OLD_MODEL, temperature=0.2, max_tokens=4000)
+        assert kwargs["temperature"] == 0.2
+        assert kwargs["max_tokens"] == 4000
+
+    def test_temperature_kept_for_non_anthropic(self):
+        kwargs = _forwarded_kwargs(
+            model="openai/gpt-4o-mini", temperature=0.7, max_tokens=4000
+        )
+        assert kwargs["temperature"] == 0.7
+
+    def test_temperature_none_is_omitted_everywhere(self):
+        for model in (NEW_MODEL, OLD_MODEL, "openai/gpt-4o-mini"):
+            kwargs = _forwarded_kwargs(model=model, temperature=None, max_tokens=4000)
+            assert "temperature" not in kwargs, model
+
+    def test_max_tokens_floor_applied_for_thinking_model(self):
+        # The regression from the report: the YES/NO injection check asks for 10
+        # tokens, which thinking consumes entirely, yielding empty content.
+        kwargs = _forwarded_kwargs(model=NEW_MODEL, temperature=0.0, max_tokens=10)
+        assert kwargs["max_tokens"] >= 4096
+
+    def test_max_tokens_untouched_for_older_model(self):
+        kwargs = _forwarded_kwargs(model=OLD_MODEL, temperature=0.0, max_tokens=10)
+        assert kwargs["max_tokens"] == 10
+
+    def test_max_tokens_floor_never_lowers_a_larger_request(self):
+        kwargs = _forwarded_kwargs(model=NEW_MODEL, temperature=None, max_tokens=8000)
+        assert kwargs["max_tokens"] == 8000
+
+    def test_no_floor_when_thinking_disabled(self):
+        kwargs = _forwarded_kwargs(
+            model=NEW_MODEL, temperature=None, max_tokens=10, thinking="off"
+        )
+        assert kwargs["max_tokens"] == 10
+
+    def test_thinking_omitted_by_default(self):
+        kwargs = _forwarded_kwargs(model=NEW_MODEL, temperature=None, max_tokens=4000)
+        assert "thinking" not in kwargs
+
+    def test_thinking_adaptive_forwarded(self):
+        kwargs = _forwarded_kwargs(
+            model=NO_THINK_MODEL, temperature=None, max_tokens=100, thinking="adaptive"
+        )
+        assert kwargs["thinking"] == {"type": "adaptive"}
+        # opus-4.7 does not think unless asked, so asking must also raise the floor
+        assert kwargs["max_tokens"] >= 4096
+
+    def test_thinking_off_forwarded(self):
+        kwargs = _forwarded_kwargs(
+            model=NEW_MODEL, temperature=None, max_tokens=4000, thinking="off"
+        )
+        assert kwargs["thinking"] == {"type": "disabled"}
+
+    def test_thinking_not_sent_to_non_anthropic(self):
+        kwargs = _forwarded_kwargs(
+            model="openai/gpt-4o-mini",
+            temperature=None,
+            max_tokens=4000,
+            thinking="adaptive",
+        )
+        assert "thinking" not in kwargs
+
+    def test_extra_params_merged(self):
+        kwargs = _forwarded_kwargs(
+            model=NEW_MODEL,
+            temperature=None,
+            max_tokens=4000,
+            extra_params={"reasoning_effort": "low"},
+        )
+        assert kwargs["reasoning_effort"] == "low"
+
+    def test_extra_params_override_capability_decision(self):
+        # The escape hatch: force a parameter back on when the table is wrong.
+        kwargs = _forwarded_kwargs(
+            model=NEW_MODEL,
+            temperature=0.2,
+            max_tokens=4000,
+            extra_params={"temperature": 0.9},
+        )
+        assert kwargs["temperature"] == 0.9
+
+    def test_baseline_kwargs_always_present(self):
+        kwargs = _forwarded_kwargs(model=OLD_MODEL, temperature=0.2, max_tokens=4000)
+        assert kwargs["messages"] == [{"role": "user", "content": "test prompt"}]
+        assert kwargs["timeout"] == 30
+
+
+class TestWarnOnce:
+    """A fan-out phase must not repeat the same warning per thread."""
+
+    def test_temperature_warning_emitted_once(self, capsys):
+        import analyze
+
+        analyze._warned.clear()
+        for _ in range(3):
+            build_completion_kwargs(
+                model=NEW_MODEL,
+                prompt="p",
+                temperature=0.2,
+                max_tokens=4000,
+                timeout=30,
+            )
+        output = capsys.readouterr().out
+        assert output.count("does not accept `temperature`") == 1
+
+    def test_unsupported_thinking_opt_out_warns(self, capsys):
+        import analyze
+
+        analyze._warned.clear()
+        kwargs = build_completion_kwargs(
+            model="claude-fable-5-1",
+            prompt="p",
+            temperature=None,
+            max_tokens=4000,
+            timeout=30,
+            thinking="off",
+        )
+        assert "thinking" not in kwargs
+        assert "does not support `thinking: off`" in capsys.readouterr().out
+
+
+class TestParseExtraLLMParams:
+    """extra_llm_params must reject anything that is not a JSON object."""
+
+    def test_empty_is_none(self):
+        assert parse_extra_llm_params("") is None
+        assert parse_extra_llm_params("   ") is None
+
+    def test_object_parsed(self):
+        assert parse_extra_llm_params('{"reasoning_effort": "low"}') == {
+            "reasoning_effort": "low"
+        }
+
+    def test_invalid_json_rejected(self):
+        with pytest.raises(ValueError, match="Invalid JSON"):
+            parse_extra_llm_params("{not json}")
+
+    def test_non_object_rejected(self):
+        with pytest.raises(ValueError, match="must be a JSON object"):
+            parse_extra_llm_params('["a", "b"]')

@@ -8,9 +8,11 @@ when analyzing commits for version bumps.
 These are documented, versioned, and used by external consumers:
 
 ### GitHub Action Interface (`action.yml`)
-- All inputs: `model`, `current_version`, `head_ref`, `context_files`, etc.
+- All inputs: `model`, `current_version`, `head_ref`, `context_files`,
+  `temperature`, `thinking`, `extra_llm_params`, etc.
 - All outputs: `bump`, `next_version`, `changelogs`, `warnings`, etc.
 - Renaming, removing, or changing types of inputs/outputs is BREAKING
+- `thinking` and `extra_llm_params` are additive (MINOR)
 
 ### Output Data Models (`src/models.py`)
 - `AnalysisResult` - Phase 1 output structure
@@ -35,6 +37,8 @@ These are internal details that can change freely:
 - `flatten.py` - change consolidation
 - `map_reduce.py` - large input processing
 - `content_scanner.py` - security scanning
+- `model_capabilities.py` - which parameters each model accepts (the table of
+  model families is internal and expected to change as providers ship models)
 
 ### Internal Functions
 - All functions starting with underscore (`_validate*`, `_parse*`, `_extract*`)
