@@ -37,6 +37,7 @@ These are internal details that can change freely:
 - `flatten.py` - change consolidation
 - `map_reduce.py` - large input processing
 - `content_scanner.py` - security scanning
+- `anthropic_federation.py` - Anthropic Workload Identity Federation (keyless auth)
 - `model_capabilities.py` - which parameters each model accepts (the table of
   model families is internal and expected to change as providers ship models)
 

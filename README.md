@@ -465,6 +465,30 @@ Use a smarter model for analysis, faster model for changelogs:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
+### With Anthropic Workload Identity Federation (no API key)
+
+Authenticate to the Claude API with the job's GitHub OIDC token instead of a stored `ANTHROPIC_API_KEY`. Set up a federation issuer, service account and rule in the Claude Console (**Settings → Workload identity → Connect workload → GitHub Actions**; see [Anthropic's guide](https://platform.claude.com/docs/en/manage-claude/wif-providers/github-actions)), then:
+
+```yaml
+permissions:
+  id-token: write   # lets the action request the OIDC token
+  contents: read
+
+steps:
+  - uses: lmgarret/llm-release-action@v1
+    with:
+      model: anthropic/claude-sonnet-5
+    env:
+      ANTHROPIC_FEDERATION_RULE_ID: fdrl_...
+      ANTHROPIC_ORGANIZATION_ID: 00000000-0000-0000-0000-000000000000
+      ANTHROPIC_SERVICE_ACCOUNT_ID: svac_...
+      ANTHROPIC_WORKSPACE_ID: wrkspc_...  # only if the rule spans multiple workspaces
+```
+
+The action requests a fresh GitHub OIDC token (audience `https://api.anthropic.com`, override with `ANTHROPIC_IDENTITY_TOKEN_AUDIENCE`) for each exchange, and refreshes the short-lived Anthropic token during long runs. Outside GitHub Actions, provide the JWT via `ANTHROPIC_IDENTITY_TOKEN_FILE` or `ANTHROPIC_IDENTITY_TOKEN`. These are the same variables the official Anthropic SDKs read. Federation applies to `anthropic/` models only, and, as in the SDKs, a set `ANTHROPIC_API_KEY` takes precedence over it.
+
+For Bedrock or Vertex, use the cloud's own keyless auth instead (e.g. `aws-actions/configure-aws-credentials` with `role-to-assume`, or `google-github-actions/auth`); LiteLLM picks up those credentials from the environment.
+
 ### Monitor LLM Costs
 
 ```yaml

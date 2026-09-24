@@ -75,6 +75,11 @@ _usage = AggregateUsage()
 _warned: set = set()
 
 from analyzer import parse_phase1_response
+from anthropic_federation import (
+    PLACEHOLDER_API_KEY,
+    federation_configured,
+    get_federated_client,
+)
 from changelog import build_changelog_prompt, filter_changes, generate_changelog
 from config import AudienceConfig, ChangelogConfig
 from context_loader import ContextResult, detect_staleness, load_context_files
@@ -292,10 +297,22 @@ def build_completion_kwargs(
             f"Model '{model}' does not support `thinking: {thinking}`; ignoring it."
         )
 
+    if federation_configured() and _is_anthropic_model(model):
+        kwargs["api_key"] = PLACEHOLDER_API_KEY
+        kwargs["client"] = get_federated_client()
+
     if extra_params:
         kwargs.update(extra_params)
 
     return kwargs
+
+
+def _is_anthropic_model(model: str) -> bool:
+    """True if LiteLLM routes this model to the first-party Anthropic API."""
+    try:
+        return litellm.get_llm_provider(model)[1] == "anthropic"
+    except Exception:
+        return model.startswith("anthropic/")
 
 
 def call_llm_with_retry(
