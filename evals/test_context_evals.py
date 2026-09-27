@@ -11,7 +11,7 @@ Requires AWS credentials configured for Bedrock access.
 import pytest
 import litellm
 from deepeval import assert_test
-from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 from deepeval.metrics import GEval
 from deepeval.models import DeepEvalBaseLLM
 
@@ -175,7 +175,7 @@ class TestContextImprovesAccuracy:
         correctness = GEval(
             name="Internal Refactor Detection",
             criteria="Changes to internal/private code (underscore functions, internal modules) should be PATCH, not MAJOR.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -209,7 +209,7 @@ class TestContextImprovesAccuracy:
         correctness = GEval(
             name="Public API Change Detection",
             criteria="Changes to public API signatures (documented, versioned interfaces) should be MAJOR.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -242,7 +242,7 @@ class TestContextImprovesAccuracy:
         correctness = GEval(
             name="Internal Module Detection",
             criteria="Changes to internal modules (listed as internal in context) should be PATCH.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -276,7 +276,7 @@ class TestContextImprovesAccuracy:
         correctness = GEval(
             name="Additive API Change Detection",
             criteria="Adding new optional inputs/outputs to action.yml is backwards compatible and should be MINOR.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -310,7 +310,7 @@ class TestContextImprovesAccuracy:
         correctness = GEval(
             name="Breaking Action Change Detection",
             criteria="Renaming inputs or changing output formats in action.yml breaks existing users and should be MAJOR.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )

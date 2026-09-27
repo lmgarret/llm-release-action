@@ -11,7 +11,7 @@ Run with: PYTHONPATH=src pytest evals/test_flatten_evals.py -v -m eval
 import pytest
 import litellm
 from deepeval import assert_test
-from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 from deepeval.metrics import GEval
 from deepeval.models import DeepEvalBaseLLM
 
@@ -140,7 +140,7 @@ class TestRevertedFeatureEvals:
         correctness = GEval(
             name="Revert Detection",
             criteria="The output should NOT mention Stripe or payment (which was reverted). It SHOULD mention dark mode and docs.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -170,7 +170,7 @@ class TestRevertedFeatureEvals:
         correctness = GEval(
             name="Full Revert Detection",
             criteria="When all changes are reverted, the output should be empty or contain no caching-related entries.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -212,7 +212,7 @@ class TestConsolidationEvals:
         consolidation = GEval(
             name="Change Consolidation",
             criteria="Related changes should be consolidated into fewer entries while preserving the key functionality (OAuth).",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.6,
             model=get_eval_llm(),
         )
@@ -254,7 +254,7 @@ class TestContentOverrideEvals:
         correctness = GEval(
             name="Changelog Net State",
             criteria="Changelog text with add then remove should produce net state. Caching should be excluded, OAuth and preferences should be included.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -306,7 +306,7 @@ class TestVersionBumpAfterFlattenEvals:
         accuracy = GEval(
             name="Version Bump Accuracy",
             criteria="Version bump should be based on net state (dark mode = minor), not raw history (which would include Stripe).",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )

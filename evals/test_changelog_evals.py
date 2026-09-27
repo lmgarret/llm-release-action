@@ -11,7 +11,7 @@ Requires AWS credentials configured for Bedrock access.
 import pytest
 import litellm
 from deepeval import assert_test
-from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 from deepeval.metrics import GEval
 from deepeval.models import DeepEvalBaseLLM
 
@@ -177,7 +177,7 @@ class TestAudienceTransformationEvals:
         technical_metric = GEval(
             name="Technical Depth",
             criteria="The changelog should include technical details like API endpoints, code changes, and implementation specifics appropriate for developers.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -208,7 +208,7 @@ class TestAudienceTransformationEvals:
         benefit_metric = GEval(
             name="Benefit Focus",
             criteria="The changelog should focus on user benefits (what they can do, what's improved) rather than technical implementation details. It should use friendly, accessible language.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -244,7 +244,7 @@ class TestAudienceTransformationEvals:
         conciseness_metric = GEval(
             name="Executive Conciseness",
             criteria="The changelog should be concise (under 300 words), focus on business impact, and highlight only the most important changes.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -289,7 +289,7 @@ class TestLanguageTransformationEvals:
         language_metric = GEval(
             name="Spanish Language",
             criteria="The changelog must be written entirely in Spanish, with proper grammar and natural phrasing.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
             threshold=0.8,
             model=get_eval_llm(),
         )
@@ -325,7 +325,7 @@ class TestLanguageTransformationEvals:
         language_metric = GEval(
             name="Japanese Language",
             criteria="The changelog must be written entirely in Japanese, using appropriate kanji, hiragana, and katakana.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
             threshold=0.8,
             model=get_eval_llm(),
         )
@@ -401,7 +401,7 @@ class TestFormatAndToneEvals:
         tone_metric = GEval(
             name="Formal Tone",
             criteria="The changelog should use formal, professional language. Avoid casual expressions, slang, or overly enthusiastic phrasing.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )

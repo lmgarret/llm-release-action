@@ -393,7 +393,8 @@ def validate_context_files_patterns(patterns_str: str) -> List[str]:
     # Try to compile with pathspec to catch syntax errors
     try:
         import pathspec
-        pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+        from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
+        pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, patterns)
     except ImportError:
         # pathspec not installed yet - skip this check
         pass
