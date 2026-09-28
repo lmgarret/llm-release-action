@@ -9,7 +9,7 @@ Requires AWS credentials configured for Bedrock access.
 import pytest
 import litellm
 from deepeval import assert_test
-from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 from deepeval.metrics import GEval
 from deepeval.models import DeepEvalBaseLLM
 
@@ -126,7 +126,7 @@ class TestVersionBumpEvals:
         correctness = GEval(
             name="Version Bump Correctness",
             criteria="The version bump should be 'patch' for bug fixes and documentation changes only.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -158,7 +158,7 @@ class TestVersionBumpEvals:
         correctness = GEval(
             name="Version Bump Correctness",
             criteria="The version bump should be 'minor' for new features without breaking changes.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -190,7 +190,7 @@ class TestVersionBumpEvals:
         correctness = GEval(
             name="Version Bump Correctness",
             criteria="The version bump should be 'major' for breaking changes.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )
@@ -234,7 +234,7 @@ class TestChangelogQualityEvals:
         relevancy = GEval(
             name="Changelog Relevancy",
             criteria="The changelog should mention all the key changes: dark mode, CSV export, user customization.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT, LLMTestCaseParams.EXPECTED_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
             threshold=0.6,
             model=get_eval_llm(),
         )
@@ -268,7 +268,7 @@ class TestChangelogQualityEvals:
         structure_metric = GEval(
             name="Changelog Structure",
             criteria="The changelog should be well-formatted markdown with clear sections (Features, Bug Fixes, etc.) and bullet points.",
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
+            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT],
             threshold=0.7,
             model=get_eval_llm(),
         )

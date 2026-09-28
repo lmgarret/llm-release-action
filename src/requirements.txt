@@ -1,26 +1,26 @@
 # LiteLLM for multi-provider LLM abstraction
-litellm==1.80.11
+litellm==1.103.0
 
 # AWS SDK for Bedrock support
-boto3==1.43.19    # pinned for reproducibility; 1.43.19 is the version CI resolved (backend run 26838360165). litellm already pinned at 1.80.11.
+boto3==1.43.103    # pinned for reproducibility alongside litellm; bump both deliberately.
 
 # YAML/JSON config parsing
-pyyaml>=6.0
+pyyaml>=6.0.3
 
 # Language code validation (lightweight lookup tables)
-langcodes>=3.3.0
+langcodes>=3.5.1
 language-data>=1.4.0
 # Language detection for output validation (optional)
 langdetect>=1.0.9
 
 # Templating for prompts
-Jinja2>=3.1.0
+Jinja2>=3.1.6
 
 # Regex with timeout support for ReDoS protection
-regex>=2024.0.0
+regex>=2026.9.10
 
 # Gitignore-style pattern matching for context files
-pathspec>=0.12.0
+pathspec>=1.1.1
 
 # Unified diff parsing for diff analysis
-unidiff>=0.7.0
+unidiff>=1.0.1

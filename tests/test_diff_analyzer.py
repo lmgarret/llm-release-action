@@ -57,7 +57,7 @@ index 0000000..1234567
 +    return True
 """  # Note: Must end with newline for concatenation to work
 
-# Note: unidiff library doesn't parse binary-only diffs (no hunks), returns empty
+# Binary-only diff: no hunks, parsed as a single binary FileDiff
 BINARY_DIFF = """\
 diff --git a/images/logo.png b/images/logo.png
 index 1234567..abcdefg 100644
@@ -116,12 +116,17 @@ class TestParseUnifiedDiff:
     def test_parse_binary_file_diff(self):
         """Parse binary file diff.
 
-        Note: The unidiff library doesn't parse binary-only diffs (no hunks).
-        This test verifies the graceful handling of this case.
+        unidiff yields a hunk-less file for binary-only diffs, which is
+        flagged as binary so it is formatted as "(Binary file changed)".
         """
         result = parse_unified_diff(BINARY_DIFF)
-        # unidiff library returns empty for binary-only diffs
-        assert result == []
+
+        assert len(result) == 1
+        diff = result[0]
+        assert diff.path == "images/logo.png"
+        assert diff.is_binary is True
+        assert diff.added_lines == []
+        assert diff.removed_lines == []
 
     def test_parse_rename_diff(self):
         """Parse rename diff."""

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Set
 
 import pathspec
+from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
 
 # Default exclusions for common directories that shouldn't be included in context
@@ -133,8 +134,8 @@ def find_matching_files(patterns: List[str], root_dir: str = ".") -> List[str]:
     negative_patterns = [p[1:] for p in patterns if p.startswith("!")]
 
     # Create pathspec for matching
-    positive_spec = pathspec.PathSpec.from_lines("gitwildmatch", positive_patterns) if positive_patterns else None
-    negative_spec = pathspec.PathSpec.from_lines("gitwildmatch", negative_patterns) if negative_patterns else None
+    positive_spec = pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, positive_patterns) if positive_patterns else None
+    negative_spec = pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, negative_patterns) if negative_patterns else None
 
     # Walk directory and find matches
     matches: List[str] = []

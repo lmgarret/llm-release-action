@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Tuple
 
 import pathspec
+from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 from unidiff import PatchSet
 
 from summarizing_map_reduce import estimate_tokens
@@ -223,7 +224,7 @@ def filter_diffs(diffs: List[FileDiff], exclude_patterns: str) -> List[FileDiff]
         return diffs
 
     # Create pathspec for matching
-    spec = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+    spec = pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, patterns)
 
     filtered: List[FileDiff] = []
     for diff in diffs:
@@ -249,7 +250,7 @@ def get_file_priority(path: str) -> int:
         Priority level (1=highest, 4=lowest).
     """
     for priority, patterns in PRIORITY_PATTERNS.items():
-        spec = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+        spec = pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, patterns)
         if spec.match_file(path):
             return priority
 
