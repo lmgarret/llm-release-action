@@ -244,21 +244,19 @@ class TestLLMRetry:
 class TestChangelogSanitization:
     """Tests for changelog sanitization."""
 
-    def test_strips_html(self):
-        """Test HTML tags are stripped."""
-        changelog = "## Changes\n<script>alert('xss')</script>\n- Fixed bug"
-        result = sanitize_changelog(changelog)
+    def test_strips_script_from_html_output(self):
+        """Test HTML-format changelogs drop script tags."""
+        changelog = "<h2>Changes</h2>\n<script>alert('xss')</script>\n<li>Fixed bug</li>"
+        result = sanitize_changelog(changelog, output_format="html")
 
         assert "<script>" not in result
-        assert "## Changes" in result
+        assert "<h2>Changes</h2>" in result
         assert "Fixed bug" in result
 
-    def test_removes_javascript_urls(self):
-        """Test javascript: URLs are removed."""
-        changelog = "## Changes\n[Click here](javascript:alert('xss'))\n- Fixed bug"
-        result = sanitize_changelog(changelog)
-
-        assert "javascript:" not in result
+    def test_markdown_passes_through(self):
+        """Test Markdown changelogs are data and left unchanged."""
+        changelog = "## Changes\n- Fixed `Option<T>` handling"
+        assert sanitize_changelog(changelog) == changelog
 
     def test_truncates_large_changelog(self):
         """Test large changelog is truncated."""

@@ -46,23 +46,15 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
-      - name: Extract changelog
+      - name: Locate changelog
         id: changelog
         env:
-          CHANGELOGS: ${{ steps.llm.outputs.changelogs }}
-        run: |
-          CHANGELOG=$(echo "$CHANGELOGS" | jq -r '.developer.en')
-          # Random delimiter: a generated "EOF" line must not end the value early
-          DELIMITER="EOF_$(openssl rand -hex 16)"
-          {
-            echo "content<<$DELIMITER"
-            echo "$CHANGELOG"
-            echo "$DELIMITER"
-          } >> "$GITHUB_OUTPUT"
+          FILES: ${{ steps.llm.outputs.changelog_files }}
+        run: echo "path=$(jq -r '.developer.en' <<< "$FILES")" >> "$GITHUB_OUTPUT"
 
       - name: Show results
         env:
-          CHANGELOG: ${{ steps.changelog.outputs.content }}
+          CHANGELOG_FILE: ${{ steps.changelog.outputs.path }}
           CURRENT_VERSION: ${{ steps.current.outputs.version }}
           NEXT_VERSION: ${{ steps.llm.outputs.next_version }}
           BUMP_TYPE: ${{ steps.llm.outputs.bump }}
@@ -76,15 +68,15 @@ jobs:
 
           ### Changelog
 
-          $CHANGELOG
           EOF
+          cat "$CHANGELOG_FILE" >> $GITHUB_STEP_SUMMARY
 
       - name: Create GitHub Release
         if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.llm.outputs.next_version }}
-          CHANGELOG: ${{ steps.changelog.outputs.content }}
+          CHANGELOG_FILE: ${{ steps.changelog.outputs.path }}
         run: |
           # Create version tag
           git tag "$VERSION"
@@ -93,7 +85,7 @@ jobs:
           # Create release
           gh release create "$VERSION" \
             --title "Release $VERSION" \
-            --notes "$CHANGELOG"
+            --notes-file "$CHANGELOG_FILE"
 
           echo "## Release Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

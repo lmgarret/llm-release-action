@@ -268,70 +268,6 @@ def _max_threat_level(current: ThreatLevel, new: ThreatLevel) -> ThreatLevel:
     return current if levels.index(current) >= levels.index(new) else new
 
 
-def detect_injection_patterns(content: str) -> tuple[ThreatLevel, List[str]]:
-    """Run the role, instruction, delimiter and encoding checks.
-
-    The raw content is checked for encoding tricks; the phrase patterns run
-    on its normalized form so full-width or zero-width-split spellings match.
-
-    Args:
-        content: Content to analyze
-
-    Returns:
-        Tuple of (highest threat level found, list of issues)
-    """
-    issues: List[str] = []
-    threat_level = ThreatLevel.NONE
-    normalized = normalize(content)
-
-    for pattern in ROLE_HIJACKING:
-        if re.search(pattern, normalized):
-            issues.append(f"Role hijacking pattern detected: {pattern}")
-            threat_level = _max_threat_level(threat_level, ThreatLevel.HIGH)
-
-    for pattern in INSTRUCTION_INJECTION:
-        if re.search(pattern, normalized):
-            issues.append("Instruction injection pattern detected")
-            threat_level = _max_threat_level(threat_level, ThreatLevel.HIGH)
-
-    for pattern in DELIMITER_INJECTION:
-        if re.search(pattern, normalized):
-            issues.append("Delimiter injection pattern detected")
-            threat_level = _max_threat_level(threat_level, ThreatLevel.MEDIUM)
-
-    encoding_issues = detect_encoding_tricks(content)
-    issues.extend(encoding_issues)
-    if encoding_issues:
-        threat_level = _max_threat_level(threat_level, ThreatLevel.HIGH)
-
-    return threat_level, issues
-
-
-def scan_untrusted(content: str, source: str) -> List[str]:
-    """Scan repository-sourced text (commits, context files, diffs) for injection.
-
-    Unlike content_override, this text is not rejected: diffs and docs
-    legitimately mention these phrases (e.g. a security test suite), and the
-    text is embedded as marked data anyway. Findings become warnings.
-
-    Args:
-        content: Content to scan
-        source: Label for the warning, e.g. "commit messages"
-
-    Returns:
-        Warning messages (empty if nothing suspicious was found)
-    """
-    if not content:
-        return []
-    level, issues = detect_injection_patterns(content)
-    if level not in (ThreatLevel.MEDIUM, ThreatLevel.HIGH, ThreatLevel.CRITICAL):
-        return []
-    unique = list(dict.fromkeys(issues))
-    return [
-        f"Possible prompt injection in {source} ({level.value}): {'; '.join(unique[:5])}"
-    ]
-
-
 def scan_content_override(content: str) -> ScanResult:
     """Comprehensive scan of content_override for security issues.
 
@@ -364,15 +300,36 @@ def scan_content_override(content: str) -> ScanResult:
         threat_level = ThreatLevel.LOW
 
     # === Injection pattern detection ===
-    injection_level, injection_issues = detect_injection_patterns(content)
-    issues.extend(injection_issues)
-    threat_level = _max_threat_level(threat_level, injection_level)
+    # Phrase patterns run on the normalized form so full-width or
+    # zero-width-split spellings match too.
+    normalized = normalize(content)
+
+    for pattern in ROLE_HIJACKING:
+        if re.search(pattern, normalized):
+            issues.append(f"Role hijacking pattern detected: {pattern}")
+            threat_level = _max_threat_level(threat_level, ThreatLevel.HIGH)
+
+    for pattern in INSTRUCTION_INJECTION:
+        if re.search(pattern, normalized):
+            issues.append("Instruction injection pattern detected")
+            threat_level = _max_threat_level(threat_level, ThreatLevel.HIGH)
+
+    for pattern in DELIMITER_INJECTION:
+        if re.search(pattern, normalized):
+            issues.append("Delimiter injection pattern detected")
+            threat_level = _max_threat_level(threat_level, ThreatLevel.MEDIUM)
 
     # === Context attacks ===
     context_issues = detect_context_attacks(content)
     issues.extend(context_issues)
     if context_issues:
         threat_level = _max_threat_level(threat_level, ThreatLevel.MEDIUM)
+
+    # === Encoding tricks ===
+    encoding_issues = detect_encoding_tricks(content)
+    issues.extend(encoding_issues)
+    if encoding_issues:
+        threat_level = _max_threat_level(threat_level, ThreatLevel.HIGH)
 
     # === Format validation ===
     format_issues = validate_changelog_format(content)

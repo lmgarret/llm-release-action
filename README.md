@@ -103,12 +103,10 @@ Related work is consolidated into a single, complete entry.
     AWS_REGION: us-east-1
 
 - name: Create GitHub Release
-  run: |
-    CHANGELOG=$(jq -r '.default.en' <<< "$CHANGELOGS")
-    gh release create "$NEXT_VERSION" --notes "$CHANGELOG"
+  run: gh release create "$NEXT_VERSION" --notes-file "$(jq -r '.default.en' <<< "$FILES")"
   env:
     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    CHANGELOGS: ${{ steps.release.outputs.changelogs }}
+    FILES: ${{ steps.release.outputs.changelog_files }}
     NEXT_VERSION: ${{ steps.release.outputs.next_version }}
 ```
 
@@ -116,7 +114,9 @@ Related work is consolidated into a single, complete entry.
 > reasoning are LLM-generated from commit messages and diffs, so anyone who can
 > land a commit can influence them. Writing `echo '${{ steps.release.outputs.changelogs }}'`
 > lets a stray quote (or a crafted one) break out into shell code. Pass outputs
-> through `env:` and reference the variable instead, as above.
+> through `env:` and reference the variable instead, as above. Prefer
+> `changelog_files`: the changelog then goes from file to tool without passing
+> through the shell at all.
 
 ## Inputs
 
@@ -155,6 +155,7 @@ Related work is consolidated into a single, complete entry.
 | `current_version` | `string` | The version compared from (detected or provided) |
 | `next_version` | `string` | Calculated next semantic version (e.g., `v1.2.0`) |
 | `changelogs` | `{[audience]: {[lang]: string}}` | Changelogs per audience and language. Default: `{"default": {"en": "..."}}` |
+| `changelog_files` | `{[audience]: {[lang]: string}}` | Path of a file holding each changelog (same shape as `changelogs`). Files live under `$RUNNER_TEMP`, so they are readable by later steps in the same job only |
 | `metadata` | `{[audience]: {[lang]: Metadata}}` | Release metadata (title, summary, highlights) per audience |
 | `changes` | `Change[]` | Structured changes with category, title, commits, authors, breaking info |
 | `stats` | `Stats` | Change counts by category and contributor count |
@@ -190,6 +191,25 @@ Default (no `changelog_config`): `{"default": {"en": "..."}}`
   }
 }
 ```
+
+#### `changelog_files`
+
+Same shape as `changelogs`, with each value replaced by the path of a file
+containing that changelog. Files are written to a fresh directory under
+`$RUNNER_TEMP` (outside the checkout, emptied by the runner after the job) and
+named `<audience>.<language>.<ext>`, where the extension follows the audience's
+`output_format`: `.md`, `.html` or `.txt`.
+
+```json
+{
+  "customer": {
+    "en": "/home/runner/work/_temp/llm-release-action-k2j4/customer.en.md",
+    "es": "/home/runner/work/_temp/llm-release-action-k2j4/customer.es.md"
+  }
+}
+```
+
+To use a changelog in another job, upload the file with `actions/upload-artifact`.
 
 #### `metadata`
 
@@ -1131,8 +1151,8 @@ Evals cover:
 
 - **Commit messages are sent to the LLM provider.** For sensitive repositories, consider using a self-hosted LLM or AWS Bedrock (data stays in your AWS account).
 - LLM outputs are validated (bump must be exactly `major`, `minor`, or `patch`; `next_version` is computed, never taken from the model).
-- Changelogs and `reasoning` are sanitized before they are output: Markdown and plain-text output has HTML stripped and `javascript:`/`vbscript:`/`data:` links removed; HTML output keeps only structural tags (headings, lists, paragraphs, emphasis, code, links) with `http(s)`/`mailto`/relative links. Size is limited to 64KB.
-- Outputs are still LLM-generated text derived from commits and files. Pass them to scripts through `env:`, never by interpolating `${{ steps.<id>.outputs.* }}` into `run:` or `script:`.
+- The action never executes generated text. Outputs are LLM-generated from commits and files, so treat them as untrusted data: pass them to scripts through `env:` (or use `changelog_files`), never by interpolating `${{ steps.<id>.outputs.* }}` into `run:` or `script:`.
+- Markdown and plain-text changelogs are output unchanged; escaping them is up to whatever renders them (GitHub already sanitizes release notes). `output_format: html` changelogs are meant to be inserted as markup, so they keep only structural tags (headings, lists, paragraphs, emphasis, code, links) with `http(s)`/`mailto`/relative links. Changelogs are limited to 64KB.
 
 ### Prompt Injection Defense
 
@@ -1142,13 +1162,14 @@ The action implements multi-layer defense against prompt injection attacks:
 - Every prompt marks commit messages, context files, diffs and earlier model output as data, inside a block whose closing tag carries a random nonce, and tells the model never to follow instructions found there
 - Text is Unicode-normalized (NFKC, invisible and bidi characters removed) and any of the prompts' own structural tags (`<BUMP>`, `</PROJECT_CONTEXT>`, ...) are escaped, so content cannot close its block or forge a response section
 - Project context is treated as reference data: explicit evidence in the changes outranks it, and directives in it are ignored
+- The model has no tools and sees no secrets, and its answer is parsed into a fixed shape (`bump` is an enum, `next_version` is computed), so a manipulated response can at worst produce a wrong bump level or misleading changelog text, both of which a release review catches
 
-**Layer 2 - Pattern Detection (default: enabled)**
+**Layer 2 - Pattern Detection for `content_override` (default: enabled)**
 - Detects role hijacking attempts (e.g., `System:`, `[INST]`, ChatML tags)
 - Detects instruction injection (e.g., "ignore previous instructions", "you are now a DAN")
 - Detects delimiter abuse (e.g., `</prompt>`, `</system>`)
-- `content_override`: HIGH threat patterns are blocked; MEDIUM patterns are logged
-- Commit messages, context files and diffs: findings are reported in the `warnings` output but do not block (diffs and docs legitimately mention these phrases, e.g. security tests)
+- HIGH threat patterns are blocked; MEDIUM patterns are logged
+- Commit messages, context files and diffs are not scanned: they legitimately contain these phrases (e.g. security tests), and Layer 1 does not depend on catching them
 
 **Layer 3 - LLM Validation (optional, `content_override` only)**
 - Uses a separate LLM call to validate suspicious content, with that content in a data block

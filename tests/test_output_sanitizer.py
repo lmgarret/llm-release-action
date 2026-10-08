@@ -5,26 +5,20 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from analyze import sanitize_changelogs, set_output
+import json
+
+from analyze import sanitize_changelogs, set_output, write_changelog_files
 from config import ChangelogConfig
 from output_sanitizer import sanitize_changelog
 
 
-class TestMarkdownSanitization:
-    def test_strips_html_and_script_urls(self) -> None:
-        result = sanitize_changelog("- Fix <img src=x onerror=alert(1)> [x](javascript:alert(1))")
-        assert "<img" not in result
-        assert "javascript:" not in result
+class TestTextFormatsPassThrough:
+    def test_markdown_is_unchanged(self) -> None:
+        text = "- Generics: `Vec<T>` now implements <Display> [x](javascript:alert(1))"
+        assert sanitize_changelog(text) == text
 
-    def test_neutralizes_data_links(self) -> None:
-        result = sanitize_changelog("[x](data:text/html;base64,AAAA)")
-        assert "data:" not in result
-
-    def test_keeps_plain_words_ending_in_data(self) -> None:
-        assert sanitize_changelog("- Export data: CSV and JSON") == "- Export data: CSV and JSON"
-
-    def test_removes_bidi_overrides(self) -> None:
-        assert "‮" not in sanitize_changelog("- Fix ‮gnp.exe")
+    def test_plain_is_unchanged(self) -> None:
+        assert sanitize_changelog("a < b", output_format="plain") == "a < b"
 
 
 class TestHtmlSanitization:
@@ -59,7 +53,7 @@ class TestSanitizeChangelogs:
             {"web": {"en": "<p>ok</p><script>x</script>"}, "dev": {"en": "<p>ok</p>"}},
             config,
         )
-        assert result == {"web": {"en": "<p>ok</p>"}, "dev": {"en": "ok"}}
+        assert result == {"web": {"en": "<p>ok</p>"}, "dev": {"en": "<p>ok</p>"}}
 
 
 class TestSetOutput:
@@ -73,3 +67,31 @@ class TestSetOutput:
         delimiter = content.splitlines()[0].split("<<", 1)[1]
         assert content.count(delimiter) == 2
         assert content.endswith(f"\n{delimiter}\n")
+
+
+class TestWriteChangelogFiles:
+    def test_writes_one_file_per_audience_and_language(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+        config = ChangelogConfig.from_yaml(
+            "web:\n  preset: customer\n  output_format: html\n  languages: [en, es]\n"
+        )
+        changelogs = {"web": {"en": "<p>hi</p>", "es": "<p>hola</p>"}, "default": {"en": "it's"}}
+
+        paths = write_changelog_files(changelogs, config)
+
+        assert paths["web"]["en"].endswith("web.en.html")
+        assert paths["default"]["en"].endswith("default.en.md")
+        for audience, by_language in changelogs.items():
+            for language, text in by_language.items():
+                path = paths[audience][language]
+                assert path.startswith(str(tmp_path))
+                with open(path, encoding="utf-8") as f:
+                    assert f.read() == text
+        json.dumps(paths)
+
+    def test_each_run_gets_its_own_directory(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+        config = ChangelogConfig.from_yaml("")
+        first = write_changelog_files({"default": {"en": "a"}}, config)
+        second = write_changelog_files({"default": {"en": "b"}}, config)
+        assert first["default"]["en"] != second["default"]["en"]

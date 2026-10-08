@@ -1,9 +1,9 @@
-"""Sanitize LLM-generated text before it leaves the action as an output.
+"""Prepare generated changelogs for output.
 
-Changelogs end up in release notes, PR comments and web pages, and the text
-that produced them may have been steered by a malicious commit or file. Markdown
-and plain-text output loses all HTML; HTML output keeps only an allowlist of
-structural tags, with links restricted to safe schemes.
+Markdown and plain-text changelogs are data: they pass through unchanged, and
+escaping them is the job of whatever renders them. HTML output is different,
+since the format exists to be inserted into a page as markup, so it keeps only
+an allowlist of structural tags, with links restricted to safe schemes.
 """
 
 import html
@@ -12,13 +12,6 @@ from html.parser import HTMLParser
 from typing import List, Tuple
 
 MAX_CHANGELOG_BYTES = 65536
-
-# Bidi overrides/isolates and C0 controls (except tab and newline) can hide or
-# reorder text when rendered.
-_HIDDEN = re.compile(r"[‪-‮⁦-⁩\x00-\x08\x0b-\x1f\x7f]")
-
-_SCRIPT_SCHEME = re.compile(r"(?i)\b(?:javascript|vbscript)\s*:[^\s\"']*")
-_MARKDOWN_DATA_LINK = re.compile(r"(?i)(\]\(\s*)data\s*:[^)\s]*")
 
 _ALLOWED_TAGS = {
     "a", "b", "blockquote", "br", "code", "em", "h1", "h2", "h3", "h4", "h5",
@@ -75,33 +68,22 @@ def _sanitize_html(text: str) -> str:
     return "".join(parser.parts)
 
 
-def _sanitize_text(text: str) -> str:
-    text = re.sub(r"<[^>]+>", "", text)
-    text = _SCRIPT_SCHEME.sub("", text)
-    return _MARKDOWN_DATA_LINK.sub(r"\1#", text)
-
-
 def sanitize_changelog(
     changelog: str,
     max_size: int = MAX_CHANGELOG_BYTES,
     output_format: str = "markdown",
 ) -> str:
-    """Sanitize a generated changelog for its output format.
+    """Prepare a generated changelog for output.
 
     Args:
         changelog: LLM-generated changelog
         max_size: Maximum size in bytes; longer output is truncated
-        output_format: "markdown", "plain" or "html"
+        output_format: "markdown", "plain" or "html"; only HTML is rewritten
 
     Returns:
-        Sanitized changelog
+        The changelog, size-limited, with HTML reduced to the allowlist
     """
-    sanitized = _HIDDEN.sub("", changelog)
-
-    if output_format == "html":
-        sanitized = _sanitize_html(sanitized)
-    else:
-        sanitized = _sanitize_text(sanitized)
+    sanitized = _sanitize_html(changelog) if output_format == "html" else changelog
 
     if len(sanitized.encode("utf-8")) > max_size:
         while len(sanitized.encode("utf-8")) > max_size - 20:

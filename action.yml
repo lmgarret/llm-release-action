@@ -70,7 +70,7 @@ inputs:
     required: false
     default: ''
   validate_injections:
-    description: 'Prompt injection scanning mode. "pattern" = regex only (default), "both" = pattern + LLM, "llm" = LLM only, "none" = disabled. content_override is rejected on high-risk findings (LLM checks apply to it only); commit messages, context files and diffs are pattern-scanned and reported in the warnings output. Untrusted text is always embedded as marked data regardless of this setting.'
+    description: 'Prompt injection validation mode for content_override. "pattern" = regex only (default), "both" = pattern + LLM, "llm" = LLM only, "none" = disabled. Commit messages, context files and diffs are not scanned; all untrusted text is embedded in prompts as marked data regardless of this setting.'
     required: false
     default: 'pattern'
   validation_model:
@@ -115,6 +115,9 @@ outputs:
   changelogs:
     description: 'JSON object with changelogs: {audience: {language: markdown}}. Default: {default: {en: "..."}}. See README for schema. Untrusted text: pass it to scripts via env, never interpolate it into run or script.'
     value: ${{ steps.analyze.outputs.changelogs }}
+  changelog_files:
+    description: 'JSON object with the path of a file holding each changelog: {audience: {language: path}}. Files are under RUNNER_TEMP, readable by later steps in the same job. Lets steps use a changelog (e.g. gh release create --notes-file) without handling its text in shell.'
+    value: ${{ steps.analyze.outputs.changelog_files }}
   metadata:
     description: 'JSON object with release metadata per audience and language: {audience: {language: {title, summary, highlights}}}'
     value: ${{ steps.analyze.outputs.metadata }}

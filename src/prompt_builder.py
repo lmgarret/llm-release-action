@@ -6,7 +6,7 @@ Jinja2 templates from the prompts module for flexible, conditional prompts.
 
 import re
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 
 from content_scanner import sanitize_content
@@ -21,8 +21,6 @@ class CommitInfo:
     hash: str
     message: str
     has_breaking_marker: bool = False
-    # Unsanitized message, kept only for injection scanning; never put in prompts
-    raw_message: str = field(default="", repr=False)
 
 
 def sanitize_message(message: str, max_length: int = 500) -> str:
@@ -164,7 +162,6 @@ def get_commits(base_ref: str, head_ref: str = "HEAD") -> List[CommitInfo]:
                 hash=commit_hash[:8],
                 message=sanitize_message(message),
                 has_breaking_marker=has_breaking_change(message),
-                raw_message=message,
             )
         )
 

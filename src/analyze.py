@@ -9,7 +9,9 @@ This script implements a three-phase architecture:
 
 import json
 import os
+import re
 import sys
+import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -86,7 +88,6 @@ from content_scanner import (
     parse_validation_mode,
     sanitize_content,
     scan_content_override,
-    scan_untrusted,
     truncate_for_context,
     validate_response,
     validate_with_llm,
@@ -107,7 +108,6 @@ from prompt_builder import (
     build_prompt,
     build_semantic_analysis_prompt,
     get_commits,
-    get_file_diff,
     has_breaking_change,
     sanitize_message,
 )
@@ -394,25 +394,11 @@ def call_llm_with_retry(
     raise RuntimeError(f"LLM call failed after {max_retries} attempts: {last_error}")
 
 
-def warn_untrusted(
-    content: str,
-    source: str,
-    validation_mode: ValidationMode,
-    warnings: List[str],
-) -> None:
-    """Pattern-scan repository content and record any findings as warnings."""
-    if validation_mode not in (ValidationMode.BOTH, ValidationMode.PATTERN):
-        return
-    for warning in scan_untrusted(content, source):
-        warnings.append(warning)
-        log_warning(warning)
-
-
 def sanitize_changelogs(
     changelogs: Dict[str, Dict[str, str]],
     changelog_config: ChangelogConfig,
 ) -> Dict[str, Dict[str, str]]:
-    """Sanitize every generated changelog for its audience's output format."""
+    """Size-limit every changelog, reducing HTML-format ones to the allowlist."""
     sanitized: Dict[str, Dict[str, str]] = {}
     for audience_name, by_language in changelogs.items():
         audience = changelog_config.audiences.get(audience_name)
@@ -422,6 +408,40 @@ def sanitize_changelogs(
             for language, text in by_language.items()
         }
     return sanitized
+
+
+CHANGELOG_FILE_EXTENSIONS = {"markdown": "md", "html": "html", "plain": "txt"}
+
+
+def write_changelog_files(
+    changelogs: Dict[str, Dict[str, str]],
+    changelog_config: ChangelogConfig,
+) -> Dict[str, Dict[str, str]]:
+    """Write each changelog to its own file so later steps never handle the text in shell.
+
+    Files go in a fresh directory under RUNNER_TEMP: outside the checkout, so
+    nothing picks them up by accident, and emptied by the runner after the job.
+
+    Returns:
+        Paths with the same shape as changelogs: {audience: {language: path}}
+    """
+    base_dir = os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()
+    out_dir = tempfile.mkdtemp(prefix="llm-release-action-", dir=base_dir)
+
+    paths: Dict[str, Dict[str, str]] = {}
+    for audience_name, by_language in changelogs.items():
+        audience = changelog_config.audiences.get(audience_name)
+        output_format = audience.output_format if audience else "markdown"
+        extension = CHANGELOG_FILE_EXTENSIONS.get(output_format, "txt")
+        paths[audience_name] = {}
+        for language, text in by_language.items():
+            # Names are already validated; keep them filename-safe regardless
+            stem = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{audience_name}.{language}")
+            path = os.path.join(out_dir, f"{stem}.{extension}")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            paths[audience_name][language] = path
+    return paths
 
 
 def parse_commits_json(json_str: str) -> List[CommitInfo]:
@@ -463,7 +483,6 @@ def parse_commits_json(json_str: str) -> List[CommitInfo]:
             hash=commit_hash,
             message=sanitize_message(message),
             has_breaking_marker=has_breaking_change(message),
-            raw_message=message,
         ))
 
     return commits
@@ -1136,16 +1155,6 @@ def main() -> int:
         # Initialize warnings collection
         all_warnings: List[str] = []
 
-        # Commit messages, context files and diffs are written by whoever can
-        # push or open a PR; they are embedded as marked data, and flagged here.
-        if commits:
-            warn_untrusted(
-                "\n".join(c.raw_message or c.message for c in commits),
-                "commit messages",
-                validation_mode,
-                all_warnings,
-            )
-
         # === Load Context Files ===
         context_content: Optional[str] = None
         context_result: Optional[ContextResult] = None
@@ -1176,7 +1185,6 @@ def main() -> int:
 
             if context_result.content:
                 context_content = context_result.content
-                warn_untrusted(context_content, "context files", validation_mode, all_warnings)
                 print(f"Loaded context from: {', '.join(context_result.files_loaded)}")
                 if context_result.was_summarized:
                     print("Context was summarized to fit token budget")
@@ -1206,7 +1214,6 @@ def main() -> int:
                     check=True,
                 )
                 raw_diff = diff_result.stdout
-                warn_untrusted(raw_diff, "diffs", validation_mode, all_warnings)
 
                 if raw_diff.strip():
                     # Create LLM caller for the MAP phase
@@ -1247,16 +1254,6 @@ def main() -> int:
                 log_warning(f"Failed to get git diff: {e.stderr}")
 
             log_group_end()
-
-        elif not use_content_override:
-            diff_patterns = [p.strip() for p in include_diffs.split(",") if p.strip()]
-            if diff_patterns:
-                warn_untrusted(
-                    get_file_diff(str(current_version), head_ref, diff_patterns),
-                    "diffs",
-                    validation_mode,
-                    all_warnings,
-                )
 
         # === PHASE 1: Semantic Analysis ===
         analysis_result = run_phase1(
@@ -1337,11 +1334,12 @@ def main() -> int:
         set_output("bump", analysis_result.bump)
         set_output("current_version", str(current_version))
         set_output("next_version", str(next_version))
-        set_output("reasoning", sanitize_changelog(analysis_result.reasoning))
+        set_output("reasoning", analysis_result.reasoning)
 
         # Changelogs (always populated - uses default audience if no config)
         changelogs = sanitize_changelogs(changelogs, changelog_config)
         set_output("changelogs", json.dumps(changelogs))
+        set_output("changelog_files", json.dumps(write_changelog_files(changelogs, changelog_config)))
         set_output("metadata", json.dumps(metadata))
 
         # Changes as JSON

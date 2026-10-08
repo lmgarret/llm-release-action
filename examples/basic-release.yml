@@ -28,13 +28,13 @@ jobs:
 
       # Pass outputs through env, never ${{ }} inside run: they are
       # LLM-generated from commits and can contain shell metacharacters.
+      # The changelog goes from file to gh without passing through the shell
       - name: Create GitHub Release
         run: |
-          CHANGELOG=$(jq -r '.default.en' <<< "$CHANGELOGS")
           gh release create "$NEXT_VERSION" \
             --title "$NEXT_VERSION" \
-            --notes "$CHANGELOG"
+            --notes-file "$(jq -r '.default.en' <<< "$FILES")"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CHANGELOGS: ${{ steps.release.outputs.changelogs }}
+          FILES: ${{ steps.release.outputs.changelog_files }}
           NEXT_VERSION: ${{ steps.release.outputs.next_version }}
