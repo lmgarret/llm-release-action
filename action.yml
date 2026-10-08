@@ -70,7 +70,7 @@ inputs:
     required: false
     default: ''
   validate_injections:
-    description: 'Prompt injection validation mode. "pattern" = regex only (default), "both" = pattern + LLM, "llm" = LLM only, "none" = disabled'
+    description: 'Prompt injection scanning mode. "pattern" = regex only (default), "both" = pattern + LLM, "llm" = LLM only, "none" = disabled. content_override is rejected on high-risk findings (LLM checks apply to it only); commit messages, context files and diffs are pattern-scanned and reported in the warnings output. Untrusted text is always embedded as marked data regardless of this setting.'
     required: false
     default: 'pattern'
   validation_model:
@@ -113,7 +113,7 @@ outputs:
     description: 'Calculated next semantic version'
     value: ${{ steps.analyze.outputs.next_version }}
   changelogs:
-    description: 'JSON object with changelogs: {audience: {language: markdown}}. Default: {default: {en: "..."}}. See README for schema.'
+    description: 'JSON object with changelogs: {audience: {language: markdown}}. Default: {default: {en: "..."}}. See README for schema. Untrusted text: pass it to scripts via env, never interpolate it into run or script.'
     value: ${{ steps.analyze.outputs.changelogs }}
   metadata:
     description: 'JSON object with release metadata per audience and language: {audience: {language: {title, summary, highlights}}}'
@@ -128,7 +128,7 @@ outputs:
     description: 'JSON array of detected breaking changes'
     value: ${{ steps.analyze.outputs.breaking_changes }}
   reasoning:
-    description: 'LLM reasoning for the version suggestion'
+    description: 'LLM reasoning for the version suggestion. Untrusted text: pass it to scripts via env, never interpolate it into run or script.'
     value: ${{ steps.analyze.outputs.reasoning }}
   usage:
     description: 'JSON object with LLM usage statistics: {total_calls, total_tokens, total_latency_ms, phase1_tokens, phase2_tokens, ...}'

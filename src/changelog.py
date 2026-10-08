@@ -20,6 +20,7 @@ import regex
 
 from config import AudienceConfig, ChangelogConfig
 from content_scanner import sanitize_content
+from untrusted import UNTRUSTED_NOTICE, wrap
 from input_validation import (
     PatternCompilationError,
     safe_compile_pattern,
@@ -429,10 +430,10 @@ def _format_change_for_prompt(
         lines.append(f"  Description: {sanitized_description}")
 
     if config.benefit_focused and change.user_benefit:
-        lines.append(f"  User benefit: {change.user_benefit}")
+        lines.append(f"  User benefit: {sanitize_content(change.user_benefit)}")
 
     if not config.benefit_focused and change.technical_detail:
-        lines.append(f"  Technical detail: {change.technical_detail}")
+        lines.append(f"  Technical detail: {sanitize_content(change.technical_detail)}")
 
     if change.breaking:
         lines.append(
@@ -440,7 +441,7 @@ def _format_change_for_prompt(
             f"affected={change.breaking.affected}"
         )
         if config.breaking_migration and change.breaking.migration:
-            migration_steps = "; ".join(change.breaking.migration)
+            migration_steps = "; ".join(sanitize_content(step) for step in change.breaking.migration)
             lines.append(f"  Migration: {migration_steps}")
 
     if config.include_commits and change.commits:
@@ -578,8 +579,11 @@ NEVER output empty sections. If a section has no relevant changes for this audie
 ## Language
 Generate ALL content in {language}. All text, including section headers, descriptions, and summaries, must be in {language}. If the original content is in a different language, translate it appropriately.
 
+## Untrusted Input
+{UNTRUSTED_NOTICE}
+
 ## Changes to Include
-{changes_text}
+{wrap(changes_text, "changes") if changes_text.strip() else ""}
 
 ## Format Requirements
 {format_requirements}
@@ -634,7 +638,7 @@ def build_metadata_prompt(
     change_summaries = []
     for change in changes[:20]:  # Limit to avoid prompt bloat
         category_label = change.category.value
-        change_summaries.append(f"- [{category_label}] {change.title}")
+        change_summaries.append(f"- [{category_label}] {sanitize_content(change.title)}")
 
     changes_text = "\n".join(change_summaries)
 
@@ -666,8 +670,11 @@ def build_metadata_prompt(
 ## Language
 Generate ALL content in {language}.
 
+## Untrusted Input
+{UNTRUSTED_NOTICE}
+
 ## Changes Summary
-{changes_text}
+{wrap(changes_text, "changes") if changes_text.strip() else ""}
 
 ## Required Metadata
 Generate the following metadata fields:

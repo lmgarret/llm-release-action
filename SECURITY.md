@@ -23,12 +23,33 @@ This action sends the following data to your configured LLM provider:
 
 ### Prompt Injection Protection
 
-The action implements the following protections:
+Commit messages, context files and diffs can be written by anyone who can push
+or open a pull request, so the action treats them as untrusted:
 
-1. **Input sanitization**: XML-like tags are stripped from commit messages
-2. **Message truncation**: Long messages are truncated to prevent token overflow
-3. **Output validation**: The bump type is validated to be exactly `major`, `minor`, or `patch`
-4. **Changelog sanitization**: HTML tags and javascript URLs are stripped from output
+1. **Data boundaries**: every prompt embeds untrusted text inside a block whose
+   closing tag carries a random nonce, and instructs the model never to follow
+   instructions found there. Text is Unicode-normalized and the prompts' own
+   structural tags (`<BUMP>`, `</PROJECT_CONTEXT>`, ...) are escaped, so content
+   cannot close its block or forge a response section. Earlier model output
+   (map/reduce, flatten, diff extraction) is treated the same way.
+2. **Pattern scanning**: `content_override` is rejected on HIGH/CRITICAL
+   findings. Commit messages, context files and diffs are scanned too, with
+   findings reported in the `warnings` output rather than blocking.
+3. **Input sanitization**: known injection phrases and XML-like tags are
+   stripped from commit messages and change descriptions. These lists are
+   defense in depth only.
+4. **Output validation**: the bump must be exactly `major`, `minor`, or
+   `patch`, and `next_version` is computed rather than taken from the model.
+5. **Output sanitization**: changelogs and `reasoning` are sanitized per output
+   format (HTML stripped from Markdown/plain text; allowlisted tags and safe
+   link schemes only in HTML output). Multi-line outputs use a random
+   `GITHUB_OUTPUT` delimiter.
+
+No defense makes an LLM immune to manipulation: a crafted commit can still
+influence the wording of a changelog or nudge the bump level. **Treat every
+output as untrusted text.** Pass outputs to later steps through `env:`; never
+interpolate `${{ steps.<id>.outputs.* }}` into `run:` or `github-script`
+`script:` blocks, where it becomes shell or JavaScript code.
 
 ### API Key Security
 

@@ -52,9 +52,13 @@ jobs:
           CHANGELOGS: ${{ steps.llm.outputs.changelogs }}
         run: |
           CHANGELOG=$(echo "$CHANGELOGS" | jq -r '.developer.en')
-          echo "content<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Random delimiter: a generated "EOF" line must not end the value early
+          DELIMITER="EOF_$(openssl rand -hex 16)"
+          {
+            echo "content<<$DELIMITER"
+            echo "$CHANGELOG"
+            echo "$DELIMITER"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Show results
         env:

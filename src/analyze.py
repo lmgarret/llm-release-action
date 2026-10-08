@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -85,6 +86,7 @@ from content_scanner import (
     parse_validation_mode,
     sanitize_content,
     scan_content_override,
+    scan_untrusted,
     truncate_for_context,
     validate_response,
     validate_with_llm,
@@ -99,11 +101,13 @@ from model_capabilities import (
 )
 from model_config import ModelConfig
 from models import AnalysisResult, Change, ChangeStats, ReleaseMetadata
+from output_sanitizer import sanitize_changelog
 from prompt_builder import (
     CommitInfo,
     build_prompt,
     build_semantic_analysis_prompt,
     get_commits,
+    get_file_diff,
     has_breaking_change,
     sanitize_message,
 )
@@ -230,7 +234,9 @@ def set_output(name: str, value: str) -> None:
         with open(github_output, "a") as f:
             # Use heredoc syntax for multiline values
             if "\n" in value:
-                delimiter = f"EOF_{int(time.time())}"
+                # Unguessable, so generated text cannot end the value early
+                # and inject further outputs.
+                delimiter = f"EOF_{uuid.uuid4().hex}"
                 f.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
             else:
                 f.write(f"{name}={value}\n")
@@ -388,22 +394,33 @@ def call_llm_with_retry(
     raise RuntimeError(f"LLM call failed after {max_retries} attempts: {last_error}")
 
 
-def sanitize_changelog(changelog: str, max_size: int = 65536) -> str:
-    """Sanitize changelog output."""
-    import re
+def warn_untrusted(
+    content: str,
+    source: str,
+    validation_mode: ValidationMode,
+    warnings: List[str],
+) -> None:
+    """Pattern-scan repository content and record any findings as warnings."""
+    if validation_mode not in (ValidationMode.BOTH, ValidationMode.PATTERN):
+        return
+    for warning in scan_untrusted(content, source):
+        warnings.append(warning)
+        log_warning(warning)
 
-    # Strip HTML tags
-    sanitized = re.sub(r"<[^>]+>", "", changelog)
 
-    # Remove javascript: URLs
-    sanitized = re.sub(r"javascript:[^\s\"']+", "", sanitized)
-
-    # Truncate if too large
-    if len(sanitized.encode("utf-8")) > max_size:
-        while len(sanitized.encode("utf-8")) > max_size - 20:
-            sanitized = sanitized[:-100]
-        sanitized = sanitized.rstrip() + "\n\n... (truncated)"
-
+def sanitize_changelogs(
+    changelogs: Dict[str, Dict[str, str]],
+    changelog_config: ChangelogConfig,
+) -> Dict[str, Dict[str, str]]:
+    """Sanitize every generated changelog for its audience's output format."""
+    sanitized: Dict[str, Dict[str, str]] = {}
+    for audience_name, by_language in changelogs.items():
+        audience = changelog_config.audiences.get(audience_name)
+        output_format = audience.output_format if audience else "markdown"
+        sanitized[audience_name] = {
+            language: sanitize_changelog(text, output_format=output_format)
+            for language, text in by_language.items()
+        }
     return sanitized
 
 
@@ -442,16 +459,11 @@ def parse_commits_json(json_str: str) -> List[CommitInfo]:
         if "repo" in item:
             commit_hash = f"[{item['repo']}] {commit_hash}"
 
-        # Sanitize message
-        message = sanitize_message(message)
-
-        # Detect breaking changes
-        has_breaking = has_breaking_change(message)
-
         commits.append(CommitInfo(
             hash=commit_hash,
-            message=message,
-            has_breaking_marker=has_breaking,
+            message=sanitize_message(message),
+            has_breaking_marker=has_breaking_change(message),
+            raw_message=message,
         ))
 
     return commits
@@ -1124,6 +1136,16 @@ def main() -> int:
         # Initialize warnings collection
         all_warnings: List[str] = []
 
+        # Commit messages, context files and diffs are written by whoever can
+        # push or open a PR; they are embedded as marked data, and flagged here.
+        if commits:
+            warn_untrusted(
+                "\n".join(c.raw_message or c.message for c in commits),
+                "commit messages",
+                validation_mode,
+                all_warnings,
+            )
+
         # === Load Context Files ===
         context_content: Optional[str] = None
         context_result: Optional[ContextResult] = None
@@ -1154,6 +1176,7 @@ def main() -> int:
 
             if context_result.content:
                 context_content = context_result.content
+                warn_untrusted(context_content, "context files", validation_mode, all_warnings)
                 print(f"Loaded context from: {', '.join(context_result.files_loaded)}")
                 if context_result.was_summarized:
                     print("Context was summarized to fit token budget")
@@ -1183,6 +1206,7 @@ def main() -> int:
                     check=True,
                 )
                 raw_diff = diff_result.stdout
+                warn_untrusted(raw_diff, "diffs", validation_mode, all_warnings)
 
                 if raw_diff.strip():
                     # Create LLM caller for the MAP phase
@@ -1223,6 +1247,16 @@ def main() -> int:
                 log_warning(f"Failed to get git diff: {e.stderr}")
 
             log_group_end()
+
+        elif not use_content_override:
+            diff_patterns = [p.strip() for p in include_diffs.split(",") if p.strip()]
+            if diff_patterns:
+                warn_untrusted(
+                    get_file_diff(str(current_version), head_ref, diff_patterns),
+                    "diffs",
+                    validation_mode,
+                    all_warnings,
+                )
 
         # === PHASE 1: Semantic Analysis ===
         analysis_result = run_phase1(
@@ -1303,9 +1337,10 @@ def main() -> int:
         set_output("bump", analysis_result.bump)
         set_output("current_version", str(current_version))
         set_output("next_version", str(next_version))
-        set_output("reasoning", analysis_result.reasoning)
+        set_output("reasoning", sanitize_changelog(analysis_result.reasoning))
 
         # Changelogs (always populated - uses default audience if no config)
+        changelogs = sanitize_changelogs(changelogs, changelog_config)
         set_output("changelogs", json.dumps(changelogs))
         set_output("metadata", json.dumps(metadata))
 

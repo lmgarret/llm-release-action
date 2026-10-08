@@ -12,6 +12,7 @@ import re
 from typing import Callable, List
 
 from models import Change, ChangeCategory, Importance
+from untrusted import UNTRUSTED_NOTICE, wrap
 
 
 FLATTEN_PROMPT = """You are analyzing a sequence of changes to determine the NET STATE.
@@ -31,6 +32,8 @@ Think step by step:
 - What was added?
 - Was it later modified? Show final state.
 - Was it later removed/reverted? Exclude entirely.
+
+{notice}
 
 Input:
 {input}
@@ -158,7 +161,7 @@ def flatten_changes(
     if not input_content or not input_content.strip():
         return ""
 
-    prompt = FLATTEN_PROMPT.format(input=input_content)
+    prompt = FLATTEN_PROMPT.format(notice=UNTRUSTED_NOTICE, input=wrap(input_content, "changes"))
     response = llm_caller(prompt)
     return parse_flattened_response(response)
 
@@ -181,6 +184,6 @@ def flatten_changes_to_list(
     if not input_content or not input_content.strip():
         return []
 
-    prompt = FLATTEN_PROMPT.format(input=input_content)
+    prompt = FLATTEN_PROMPT.format(notice=UNTRUSTED_NOTICE, input=wrap(input_content, "changes"))
     response = llm_caller(prompt)
     return parse_flattened_changes(response)

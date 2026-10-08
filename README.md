@@ -104,11 +104,19 @@ Related work is consolidated into a single, complete entry.
 
 - name: Create GitHub Release
   run: |
-    CHANGELOG=$(echo '${{ steps.release.outputs.changelogs }}' | jq -r '.default.en')
-    gh release create ${{ steps.release.outputs.next_version }} --notes "$CHANGELOG"
+    CHANGELOG=$(jq -r '.default.en' <<< "$CHANGELOGS")
+    gh release create "$NEXT_VERSION" --notes "$CHANGELOG"
   env:
     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    CHANGELOGS: ${{ steps.release.outputs.changelogs }}
+    NEXT_VERSION: ${{ steps.release.outputs.next_version }}
 ```
+
+> **Never interpolate outputs directly into `run:` or `script:`.** Changelogs and
+> reasoning are LLM-generated from commit messages and diffs, so anyone who can
+> land a commit can influence them. Writing `echo '${{ steps.release.outputs.changelogs }}'`
+> lets a stray quote (or a crafted one) break out into shell code. Pass outputs
+> through `env:` and reference the variable instead, as above.
 
 ## Inputs
 
@@ -398,8 +406,11 @@ jobs:
 
       - name: Create Release
         run: |
-          echo "Creating release ${{ steps.release.outputs.next_version }}"
-          echo "Bump type: ${{ steps.release.outputs.bump }}"
+          echo "Creating release $NEXT_VERSION"
+          echo "Bump type: $BUMP"
+        env:
+          NEXT_VERSION: ${{ steps.release.outputs.next_version }}
+          BUMP: ${{ steps.release.outputs.bump }}
 ```
 
 ### Multi-Audience Changelogs
@@ -430,7 +441,9 @@ Generate different changelogs for different audiences:
 
 - name: Get Customer Changelog (Spanish)
   run: |
-    echo '${{ steps.release.outputs.changelogs }}' | jq -r '.customer.es'
+    jq -r '.customer.es' <<< "$CHANGELOGS"
+  env:
+    CHANGELOGS: ${{ steps.release.outputs.changelogs }}
 ```
 
 ### Different Models for Analysis vs Changelog
@@ -475,7 +488,9 @@ Use a smarter model for analysis, faster model for changelogs:
 
 - name: Log Usage
   run: |
-    echo "LLM Usage: ${{ steps.release.outputs.usage }}"
+    echo "LLM Usage: $USAGE"
+  env:
+    USAGE: ${{ steps.release.outputs.usage }}
 ```
 
 ## Changelog Config Schema
@@ -949,22 +964,30 @@ jobs:
       - name: Get Frontend Changelog
         id: frontend
         run: |
-          CHANGELOG=$(gh api repos/myorg/frontend/releases/tags/${{ inputs.frontend_version }} --jq '.body')
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          CHANGELOG=$(gh api "repos/myorg/frontend/releases/tags/$VERSION" --jq '.body')
+          DELIMITER="EOF_$(openssl rand -hex 16)"
+          {
+            echo "changelog<<$DELIMITER"
+            echo "$CHANGELOG"
+            echo "$DELIMITER"
+          } >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.frontend_version }}
 
       - name: Get Backend Changelog
         id: backend
         run: |
-          CHANGELOG=$(gh api repos/myorg/backend/releases/tags/${{ inputs.backend_version }} --jq '.body')
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          CHANGELOG=$(gh api "repos/myorg/backend/releases/tags/$VERSION" --jq '.body')
+          DELIMITER="EOF_$(openssl rand -hex 16)"
+          {
+            echo "changelog<<$DELIMITER"
+            echo "$CHANGELOG"
+            echo "$DELIMITER"
+          } >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.backend_version }}
 
       # Analyze combined changes
       - uses: lmgarret/llm-release-action@v1
@@ -991,17 +1014,20 @@ jobs:
 
       - name: Create Product Release
         run: |
-          echo "Version: ${{ steps.release.outputs.next_version }}"
+          echo "Version: $NEXT_VERSION"
           echo "Customer changelog:"
-          echo '${{ steps.release.outputs.changelogs }}' | jq -r '.customer.en'
+          jq -r '.customer.en' <<< "$CHANGELOGS"
+        env:
+          NEXT_VERSION: ${{ steps.release.outputs.next_version }}
+          CHANGELOGS: ${{ steps.release.outputs.changelogs }}
 ```
 
 ### Security Notes for content_override
 
 - Content is scanned for injection patterns (role hijacking, instruction injection)
 - Large content automatically uses map/reduce (chunked parallel processing with deduplication)
-- Suspicious patterns trigger warnings but don't block execution
-- Critical threats (>500KB content) are rejected
+- HIGH and CRITICAL findings (injection phrases, encoding tricks, >500KB content) reject the run; MEDIUM findings are logged
+- With `validate_injections: both`, MEDIUM findings also go through an LLM check
 
 ## Versioning Rules
 
@@ -1104,29 +1130,36 @@ Evals cover:
 ## Security Considerations
 
 - **Commit messages are sent to the LLM provider.** For sensitive repositories, consider using a self-hosted LLM or AWS Bedrock (data stays in your AWS account).
-- LLM outputs are validated (bump must be exactly `major`, `minor`, or `patch`).
-- Changelog is sanitized (HTML stripped, size limited).
+- LLM outputs are validated (bump must be exactly `major`, `minor`, or `patch`; `next_version` is computed, never taken from the model).
+- Changelogs and `reasoning` are sanitized before they are output: Markdown and plain-text output has HTML stripped and `javascript:`/`vbscript:`/`data:` links removed; HTML output keeps only structural tags (headings, lists, paragraphs, emphasis, code, links) with `http(s)`/`mailto`/relative links. Size is limited to 64KB.
+- Outputs are still LLM-generated text derived from commits and files. Pass them to scripts through `env:`, never by interpolating `${{ steps.<id>.outputs.* }}` into `run:` or `script:`.
 
 ### Prompt Injection Defense
 
 The action implements multi-layer defense against prompt injection attacks:
 
-**Layer 1 - Pattern Detection (default: enabled)**
+**Layer 1 - Untrusted Data Boundaries (always on)**
+- Every prompt marks commit messages, context files, diffs and earlier model output as data, inside a block whose closing tag carries a random nonce, and tells the model never to follow instructions found there
+- Text is Unicode-normalized (NFKC, invisible and bidi characters removed) and any of the prompts' own structural tags (`<BUMP>`, `</PROJECT_CONTEXT>`, ...) are escaped, so content cannot close its block or forge a response section
+- Project context is treated as reference data: explicit evidence in the changes outranks it, and directives in it are ignored
+
+**Layer 2 - Pattern Detection (default: enabled)**
 - Detects role hijacking attempts (e.g., `System:`, `[INST]`, ChatML tags)
 - Detects instruction injection (e.g., "ignore previous instructions", "you are now a DAN")
 - Detects delimiter abuse (e.g., `</prompt>`, `</system>`)
-- HIGH threat patterns are blocked; MEDIUM patterns are sanitized
+- `content_override`: HIGH threat patterns are blocked; MEDIUM patterns are logged
+- Commit messages, context files and diffs: findings are reported in the `warnings` output but do not block (diffs and docs legitimately mention these phrases, e.g. security tests)
 
-**Layer 2 - LLM Validation (optional)**
-- Uses a separate LLM call to validate suspicious content
-- Minimal prompt: "Is this a prompt injection? YES/NO"
+**Layer 3 - LLM Validation (optional, `content_override` only)**
+- Uses a separate LLM call to validate suspicious content, with that content in a data block
+- Fails closed: any answer other than a clear `NO` rejects the content
 - Useful for catching novel injection patterns not in regex rules
 
-**Layer 3 - Content Sanitization**
-- All user content (commit messages, titles, descriptions) is sanitized before embedding in prompts
-- Dangerous patterns are stripped rather than just detected
+**Layer 4 - Content Sanitization**
+- Commit messages, change titles and descriptions have known injection phrases and tags stripped before embedding in prompts
+- Pattern lists are defense in depth only; paraphrases or other languages get past them, which is why Layer 1 does not depend on them
 
-**Layer 4 - ReDoS Protection**
+**Layer 5 - ReDoS Protection**
 - User-provided regex patterns (in `exclude_patterns`) are validated for catastrophic backtracking
 - Patterns with nested quantifiers like `(a+)+` are rejected
 - Pattern length limited to 200 characters
