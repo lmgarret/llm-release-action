@@ -35,7 +35,7 @@ jobs:
         id: llm
         uses: ./
         with:
-          model: anthropic/claude-sonnet-4-5-20250929
+          model: anthropic/claude-sonnet-5-5
           current_version: ${{ steps.current.outputs.version }}
           dry_run: ${{ inputs.dry_run }}
           context_files: CONTEXT.md

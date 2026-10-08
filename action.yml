@@ -34,19 +34,19 @@ inputs:
     required: false
     default: '50'
   temperature:
-    description: 'LLM temperature (0.0-2.0). Leave empty to omit the parameter entirely - required for models that have removed sampling parameters. Automatically ignored for models known to reject it.'
+    description: 'LLM temperature. Sent only when set; many current models (Sonnet 5+, Opus 4.7+, Haiku 5.5) reject it.'
     required: false
-    default: '0.2'
+    default: ''
   thinking:
-    description: "Extended thinking mode: '' (leave to the model's default), 'adaptive' (enable - needed on Opus 4.7/4.8, which do not think unless asked), or 'off'. Anthropic models only."
+    description: "Sent only when set: 'adaptive' sends {type: adaptive}, 'off' sends {type: disabled}. Some models reject 'off'."
     required: false
     default: ''
   extra_llm_params:
-    description: 'JSON object of extra parameters merged into every LLM call, e.g. ''{"reasoning_effort": "low"}''. Escape hatch for provider parameters the action does not model; merged last, so it overrides the action''s own choices.'
+    description: 'JSON object merged into every LLM call (last, so it overrides other inputs), e.g. ''{"reasoning_effort": "low"}''. The action passes parameters through as configured and does not check what a model accepts.'
     required: false
     default: ''
   max_tokens:
-    description: 'Maximum tokens in LLM response'
+    description: 'Maximum tokens in each LLM response, including internal calls. On models that think, thinking tokens count against it.'
     required: false
     default: '4000'
   timeout:

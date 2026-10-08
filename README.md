@@ -129,10 +129,10 @@ Related work is consolidated into a single, complete entry.
 | `head_ref` | No | `HEAD` | Head ref to compare to |
 | `include_diffs` | No | `**/openapi*.yaml,**/migrations/**,**/*.proto` | File patterns for diff analysis (comma-separated globs) |
 | `max_commits` | No | `50` | Max recent commits to include in full (rest summarized) |
-| `temperature` | No | `0.2` | LLM temperature (lower = more deterministic). Set to an empty string to omit the parameter. Automatically ignored on models that have removed sampling parameters. See [Newer Anthropic models](#newer-anthropic-models). |
-| `thinking` | No | - | Extended thinking mode: empty (model default), `adaptive` (enable), or `off` (disable). Anthropic models only. |
-| `extra_llm_params` | No | - | JSON object of extra parameters merged into every LLM call, e.g. `{"reasoning_effort": "low"}`. Escape hatch for provider parameters the action does not model. |
-| `max_tokens` | No | `4000` | Max tokens in LLM response. Raised automatically to at least 4096 when thinking is on, since thinking tokens come out of this budget. |
+| `temperature` | No | - | LLM temperature, sent only when set. Many current models reject it; see [Model parameters](#model-parameters). |
+| `thinking` | No | - | Sent only when set: `adaptive` sends `{"type": "adaptive"}`, `off` sends `{"type": "disabled"}`. |
+| `extra_llm_params` | No | - | JSON object merged into every LLM call, last, so it overrides the inputs above. E.g. `{"reasoning_effort": "low"}`. |
+| `max_tokens` | No | `4000` | Max tokens in each LLM response, including the action's internal calls. On models that think, thinking tokens come out of this cap. |
 | `timeout` | No | `120` | Request timeout in seconds |
 | `debug` | No | `false` | Enable verbose debug logging |
 | `dry_run` | No | `false` | Perform analysis without suggesting version |
@@ -1095,38 +1095,41 @@ For best changelog quality, use **Sonnet-class or equivalent models**:
 
 **Recommendation**: Use a capable model like Sonnet 5 or Nova Pro for `model_changelog`, and optionally a faster model for `model_analysis` if cost is a concern.
 
-### Newer Anthropic models
+### Model parameters
 
-Sonnet 5, Opus 5, Opus 4.7/4.8 and the Fable/Mythos families **removed the sampling
-parameters**. Sending `temperature`, `top_p` or `top_k` to them returns
-`` `temperature` is deprecated for this model. `` The action detects these models and
-omits the parameter, printing a warning; you do not need to change your `temperature`
-input when you switch models.
+The action passes model parameters through exactly as you configure them. It does
+not keep a list of what each model accepts, so a new model works the day it ships,
+and a parameter the model rejects fails with the provider's own error naming it.
+Fix it in the workflow inputs.
 
-Two consequences worth knowing:
+By default only `model`, `max_tokens` and `timeout` are sent. Everything else is
+opt-in:
 
-- **`temperature` is inert on these models.** There is no equivalent knob -- use
-  `thinking` (or `extra_llm_params` with `reasoning_effort`) to tune them instead. The
-  action's internal `temperature: 0.0` calls (injection validation, context
-  summarization, diff extraction) lose their determinism hint on these models; the
-  prompts themselves constrain the output shape.
-- **Thinking tokens come out of `max_tokens`.** Sonnet 5, Opus 5 and Fable/Mythos think
-  by default, so a small `max_tokens` yields empty content rather than a short answer.
-  The action raises `max_tokens` to at least 4096 on those models. Opus 4.7 and 4.8
-  reject sampling parameters but do *not* think unless you set `thinking: adaptive`.
+- **`temperature`** -- current Anthropic models (Sonnet 5 and later, Opus 4.7 and
+  later, Haiku 5.5, Fable, Mythos) reject it with
+  `` `temperature` is deprecated for this model. `` Leave it unset for those.
+- **`thinking`** -- `adaptive` or `off`. Some models reject `off` (e.g. Sonnet 5.5,
+  Opus 5.5, Fable); lower the effort instead.
+- **`extra_llm_params`** -- any other provider parameter, merged into every call
+  (analysis, changelogs and the action's internal calls alike).
+
+**Reasoning effort.** LiteLLM translates `reasoning_effort` into Anthropic's adaptive
+thinking plus `output_config.effort` (`low`, `medium`, `high`, `xhigh`, `max`):
 
 ```yaml
 - uses: lmgarret/llm-release-action@v1
   with:
-    model: anthropic/claude-sonnet-5
-    thinking: adaptive          # explicit; needed on Opus 4.7/4.8
-    max_tokens: '8000'          # room for thinking plus the changelog
+    model: anthropic/claude-sonnet-5-5
+    model_analysis: anthropic/claude-haiku-5-5
+    extra_llm_params: '{"reasoning_effort": "low"}'
 ```
 
-If a *future* model starts rejecting a parameter before the action knows about it, you
-have two escape hatches that need no code change: set `temperature: ''` to omit it, and
-use `extra_llm_params` to force any parameter you do need (it is merged last, so it
-overrides the action's own choices).
+Don't combine it with the `thinking` input: both set `thinking`, and the request
+carries conflicting values.
+
+**Thinking tokens come out of `max_tokens`.** Models that think by default return
+empty content when the cap is too small for thinking plus the answer. The default
+4000 suits most runs; raise it if a call fails with "LLM returned empty response".
 
 ## Evals
 
