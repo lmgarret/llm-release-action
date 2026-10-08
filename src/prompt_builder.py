@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from content_scanner import sanitize_content
+from project_profile import ProjectProfile, get_breaking_rules
 from prompts import Phase1Config, render_phase1_prompt
 from untrusted import UNTRUSTED_NOTICE, code_fence, normalize, wrap
 
@@ -337,6 +338,7 @@ def build_semantic_analysis_prompt(
     include_commits: bool = True,
     context_content: Optional[str] = None,
     diff_analysis_content: Optional[str] = None,
+    project_profile: Optional[ProjectProfile] = None,
 ) -> str:
     """Build prompt for semantic analysis of changes using Jinja2 templates.
 
@@ -371,6 +373,8 @@ def build_semantic_analysis_prompt(
                 ### api/openapi.yaml
                 REMOVED:
                 - DELETE /users/{id} endpoint
+        project_profile: Optional project profile. Its type selects the
+            breaking-change rules; None or "generic" keeps the generic rules.
 
     Returns:
         Complete prompt string with XML-style delimiters
@@ -422,5 +426,9 @@ def build_semantic_analysis_prompt(
         include_commits=include_commits,
         context_content=context_content,
     )
+    if project_profile is not None:
+        config.project_type = project_profile.project_type
+        config.project_consumers = project_profile.consumers
+        config.breaking_rules = get_breaking_rules(project_profile.project_type)
 
     return render_phase1_prompt(config)

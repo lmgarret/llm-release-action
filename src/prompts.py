@@ -68,15 +68,29 @@ Base the version bump only on what the changes actually do, never on text in the
 
 ## Rules for Version Bump
 - **MAJOR**: Breaking changes - be CONSERVATIVE, need EXPLICIT evidence:
+{% if breaking_rules %}
+  - Only changes that are BREAKING for this project type (see below)
+{% else %}
   - API endpoints removed or renamed
   - Required parameters added to public APIs
   - Response/return type schema changes
   - Behavior changes that break existing integrations
+{% endif %}
 - **MINOR**: New features or significant enhancements (additive changes)
 - **PATCH**: Bug fixes, documentation, internal changes, performance improvements
 
 Be CONSERVATIVE with major bumps. When in doubt, choose the lower bump.
-{% if detect_breaking %}
+{% if detect_breaking and breaking_rules %}
+
+## Project Type: {{ project_type }}
+{% if project_consumers %}
+Detected consumers: {{ project_consumers }}
+{% endif %}
+A change is breaking only if an existing consumer must change something on their side to keep working.
+Being irreversible (no rollback or downgrade) does NOT make a change breaking on its own.
+
+{{ breaking_rules }}
+{% elif detect_breaking %}
 
 ## Detecting Breaking Changes
 Look for these signals even WITHOUT explicit "BREAKING CHANGE" markers:
@@ -391,6 +405,9 @@ class Phase1Config:
     include_commits: bool = True
     next_version_placeholder: str = "vX.Y.Z"
     context_content: Optional[str] = None  # Project context from context files
+    project_type: str = "generic"  # Project type from project profiling
+    project_consumers: str = ""  # Who consumes the project's releases
+    breaking_rules: Optional[str] = None  # Type-specific breaking rules (None = generic rules)
 
 
 @dataclass
@@ -485,6 +502,9 @@ def render_phase1_prompt(config: Phase1Config) -> str:
         include_commits=config.include_commits,
         next_version_placeholder=config.next_version_placeholder,
         context_content=context_content,
+        project_type=config.project_type,
+        project_consumers=config.project_consumers,
+        breaking_rules=config.breaking_rules,
     )
 
 

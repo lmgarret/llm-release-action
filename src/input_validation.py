@@ -15,6 +15,7 @@ import yaml
 
 from config import validate_changelog_config
 from content_scanner import scan_content_override, handle_scan_result, ValidationMode
+from project_profile import VALID_PROJECT_TYPE_INPUTS
 
 
 # Maximum pattern length to reduce ReDoS attack surface
@@ -592,6 +593,21 @@ def validate_extra_llm_params(value: str) -> List[str]:
     return errors
 
 
+def validate_project_type(value: str) -> List[str]:
+    """Validate project_type input.
+
+    Args:
+        value: String value from action input
+
+    Returns:
+        List of validation errors (empty if valid)
+    """
+    normalized = (value or "").strip().lower()
+    if normalized not in VALID_PROJECT_TYPE_INPUTS:
+        return [f"Invalid project_type: '{value}'. Valid values: {', '.join(VALID_PROJECT_TYPE_INPUTS)}"]
+    return []
+
+
 def validate_inputs(
     current_version: Optional[str] = None,
     head_ref: Optional[str] = None,
@@ -608,6 +624,7 @@ def validate_inputs(
     temperature: Optional[str] = None,
     thinking: Optional[str] = None,
     extra_llm_params: Optional[str] = None,
+    project_type: Optional[str] = None,
 ) -> InputValidationResult:
     """Validate all action inputs before processing.
 
@@ -627,6 +644,7 @@ def validate_inputs(
         temperature: LLM temperature (empty omits the parameter)
         thinking: Thinking mode ('', 'adaptive' or 'off')
         extra_llm_params: JSON object of extra litellm.completion kwargs
+        project_type: Project type ('auto', 'library', 'api', 'service', 'app', 'generic')
 
     Returns:
         InputValidationResult with valid flag and errors list
@@ -713,6 +731,9 @@ def validate_inputs(
 
     if extra_llm_params:
         errors.extend(validate_extra_llm_params(extra_llm_params))
+
+    if project_type:
+        errors.extend(validate_project_type(project_type))
 
     return InputValidationResult(valid=len(errors) == 0, errors=errors)
 

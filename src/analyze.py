@@ -96,6 +96,7 @@ from map_reduce import determine_version_from_changes, process_large_input
 from model_config import ModelConfig
 from models import AnalysisResult, Change, ChangeStats, ReleaseMetadata
 from output_sanitizer import sanitize_changelog
+from project_profile import ProjectProfile, resolve_project_profile
 from prompt_builder import (
     CommitInfo,
     build_prompt,
@@ -487,6 +488,7 @@ def run_phase1(
     diff_analysis_content: Optional[str] = None,
     thinking: str = "",
     extra_params: Optional[Dict[str, Any]] = None,
+    project_profile: Optional[ProjectProfile] = None,
 ) -> AnalysisResult:
     """Run Phase 1: Semantic Analysis.
 
@@ -509,6 +511,7 @@ def run_phase1(
         validation_model: Model to use for LLM validation (defaults to model)
         context_content: Optional project context from context files
         diff_analysis_content: Optional structured diff analysis (replaces raw diffs when provided)
+        project_profile: Optional project profile selecting the breaking-change rules
 
     Returns:
         AnalysisResult with bump, reasoning, and changes
@@ -517,6 +520,7 @@ def run_phase1(
 
     # Use provided validation model or fall back to main model
     val_model = validation_model if validation_model else model
+    project_type = project_profile.project_type if project_profile else None
 
     # Check if we need map/reduce for large content_override
     if content_override and needs_chunking(content_override, threshold=2000):
@@ -655,7 +659,7 @@ def run_phase1(
             )
             return response
 
-        flattened_content = flatten_changes(content_override, flatten_llm_caller)
+        flattened_content = flatten_changes(content_override, flatten_llm_caller, project_type)
         if flattened_content:
             print(f"Flattened content ({len(flattened_content)} chars)")
             content_override = flattened_content
@@ -667,6 +671,7 @@ def run_phase1(
             base_version=base_version,
             content_override=content_override,
             context_content=context_content,
+            project_profile=project_profile,
         )
     else:
         # Phase 0: Flatten commits to net state
@@ -692,7 +697,7 @@ def run_phase1(
                 )
                 return response
 
-            flattened_content = flatten_changes(commits_text, flatten_llm_caller)
+            flattened_content = flatten_changes(commits_text, flatten_llm_caller, project_type)
             if flattened_content:
                 print(f"Flattened content ({len(flattened_content)} chars)")
                 # Use flattened content instead of raw commits
@@ -701,6 +706,7 @@ def run_phase1(
                     base_version=base_version,
                     content_override=flattened_content,
                     context_content=context_content,
+                    project_profile=project_profile,
                 )
             else:
                 print("Flatten returned empty, using original commits")
@@ -712,6 +718,7 @@ def run_phase1(
                         max_commits=max_commits,
                         diff_analysis_content=diff_analysis_content,
                         context_content=context_content,
+                        project_profile=project_profile,
                     )
                 else:
                     diff_patterns = [p.strip() for p in include_diffs.split(",") if p.strip()]
@@ -723,6 +730,7 @@ def run_phase1(
                         base_ref=base_version,
                         head_ref=head_ref,
                         context_content=context_content,
+                        project_profile=project_profile,
                     )
         else:
             # Use structured diff analysis if available, otherwise use raw diffs
@@ -733,6 +741,7 @@ def run_phase1(
                     max_commits=max_commits,
                     diff_analysis_content=diff_analysis_content,
                     context_content=context_content,
+                    project_profile=project_profile,
                 )
             else:
                 diff_patterns = [p.strip() for p in include_diffs.split(",") if p.strip()]
@@ -744,6 +753,7 @@ def run_phase1(
                     base_ref=base_version,
                     head_ref=head_ref,
                     context_content=context_content,
+                    project_profile=project_profile,
                 )
 
     print(f"Prompt built ({len(prompt)} chars)")
@@ -790,6 +800,11 @@ def validate_audience_changelog(
     )
 
 
+def get_default_preset(project_type: str) -> str:
+    """Preset for the default audience when no changelog_config is given."""
+    return "customer" if project_type == "app" else "developer"
+
+
 def run_phase2(
     model: str,
     changes: List[Change],
@@ -802,6 +817,7 @@ def run_phase2(
     debug: bool,
     thinking: str = "",
     extra_params: Optional[Dict[str, Any]] = None,
+    project_type: str = "generic",
 ) -> tuple[Dict[str, Dict[str, str]], Dict[str, Dict[str, dict]]]:
     """Run Phase 2: Changelog Generation (parallel execution).
 
@@ -815,6 +831,7 @@ def run_phase2(
         max_tokens: Max response tokens
         timeout: Request timeout
         debug: Enable debug logging
+        project_type: Project type; selects the default audience when no config is given
 
     Returns:
         Tuple of (changelogs dict, metadata dict)
@@ -825,11 +842,13 @@ def run_phase2(
     metadata: Dict[str, Dict[str, dict]] = {}
 
     if not changelog_config.audiences:
-        # Create default audience when no config provided
-        print("No changelog_config provided, using default audience")
-        changelog_config = ChangelogConfig.from_yaml("""
+        # Create default audience when no config provided. End-user apps get
+        # a user-facing changelog, everything else a developer one.
+        default_preset = get_default_preset(project_type)
+        print(f"No changelog_config provided, using default audience (preset: {default_preset})")
+        changelog_config = ChangelogConfig.from_yaml(f"""
 default:
-  preset: developer
+  preset: {default_preset}
   languages: [en]
 """)
 
@@ -1057,6 +1076,10 @@ def main() -> int:
         content_override = os.environ.get("INPUT_CONTENT_OVERRIDE", "")
         changelog_config_str = os.environ.get("INPUT_CHANGELOG_CONFIG", "")
 
+        # Project profiling settings
+        project_type_input = get_env("INPUT_PROJECT_TYPE", "auto").strip().lower() or "auto"
+        model_profile = get_env("INPUT_MODEL_PROFILE", "").strip() or model
+
         # Context files settings
         context_files_patterns = os.environ.get("INPUT_CONTEXT_FILES", "")
         context_max_tokens = get_env_int("INPUT_CONTEXT_MAX_TOKENS", 800)
@@ -1100,6 +1123,7 @@ def main() -> int:
             temperature=temperature_str,
             thinking=thinking,
             extra_llm_params=extra_llm_params_str,
+            project_type=project_type_input,
         )
 
         if not validation_result.valid:
@@ -1168,6 +1192,46 @@ def main() -> int:
 
         # Initialize warnings collection
         all_warnings: List[str] = []
+
+        # === Project Profile ===
+        log_group("Project profile")
+
+        def profile_llm_caller(prompt: str) -> str:
+            response, _ = call_llm_with_retry(
+                model=model_profile,
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                debug=debug,
+                thinking=thinking,
+                extra_params=extra_llm_params,
+            )
+            return response
+
+        try:
+            if use_content_override and project_type_input == "auto":
+                # The checked-out repo is not necessarily the one described by the content
+                project_profile = ProjectProfile(
+                    reason="Not detected with content_override; set project_type explicitly",
+                    source="default",
+                )
+            else:
+                project_profile = resolve_project_profile(project_type_input, profile_llm_caller, root_dir=".")
+        except Exception as e:
+            # Profiling is best effort: fall back to the generic rules
+            log_warning(f"Project profiling failed, using generic rules: {e}")
+            all_warnings.append(f"Project profiling failed: {e}")
+            project_profile = ProjectProfile(source="default")
+
+        print(f"Project type: {project_profile.project_type} (source: {project_profile.source})")
+        if project_profile.confidence:
+            print(f"Confidence: {project_profile.confidence}")
+        if project_profile.consumers:
+            print(f"Consumers: {project_profile.consumers}")
+        if project_profile.reason:
+            print(f"Reason: {project_profile.reason}")
+        log_group_end()
 
         # === Load Context Files ===
         context_content: Optional[str] = None
@@ -1288,6 +1352,7 @@ def main() -> int:
             diff_analysis_content=diff_analysis_content,
             thinking=thinking,
             extra_params=extra_llm_params,
+            project_profile=project_profile,
         )
 
         # === Staleness Detection ===
@@ -1331,6 +1396,7 @@ def main() -> int:
             debug=debug,
             thinking=thinking,
             extra_params=extra_llm_params,
+            project_type=project_profile.project_type,
         )
 
         # === PHASE 3: Validation ===
@@ -1349,6 +1415,7 @@ def main() -> int:
         set_output("current_version", str(current_version))
         set_output("next_version", str(next_version))
         set_output("reasoning", analysis_result.reasoning)
+        set_output("project_type", project_profile.project_type)
 
         # Changelogs (always populated - uses default audience if no config)
         changelogs = sanitize_changelogs(changelogs, changelog_config)

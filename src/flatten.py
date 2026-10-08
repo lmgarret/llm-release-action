@@ -9,10 +9,13 @@ This ensures Phase 1 sees clean input for accurate version bump calculation.
 """
 
 import re
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from models import Change, ChangeCategory, Importance
+from project_profile import get_breaking_definition
 from untrusted import UNTRUSTED_NOTICE, wrap
+
+DEFAULT_BREAKING_DEFINITION = "BREAKING = changes to PUBLIC APIs that external users depend on"
 
 
 FLATTEN_PROMPT = """You are analyzing a sequence of changes to determine the NET STATE.
@@ -25,7 +28,7 @@ Go through the changes chronologically and determine what ACTUALLY remains:
 4. REVERT commits themselves should never appear in output
 
 IMPORTANT - Version bump categories:
-- BREAKING = changes to PUBLIC APIs that external users depend on
+- {breaking_definition}
 - NOT breaking = internal refactoring, removing internal dependencies, optimizing implementations
 
 Think step by step:
@@ -142,9 +145,20 @@ def parse_flattened_changes(response: str) -> List[Change]:
     return changes
 
 
+def build_flatten_prompt(input_content: str, project_type: Optional[str] = None) -> str:
+    """Render the flatten prompt with the breaking definition for the project type."""
+    definition = get_breaking_definition(project_type or "") or DEFAULT_BREAKING_DEFINITION
+    return FLATTEN_PROMPT.format(
+        notice=UNTRUSTED_NOTICE,
+        input=wrap(input_content, "changes"),
+        breaking_definition=definition,
+    )
+
+
 def flatten_changes(
     input_content: str,
     llm_caller: Callable[[str], str],
+    project_type: Optional[str] = None,
 ) -> str:
     """Flatten input to net state using LLM.
 
@@ -154,6 +168,7 @@ def flatten_changes(
     Args:
         input_content: Raw changes (commits formatted as text, or changelog text)
         llm_caller: Function that calls the LLM and returns response
+        project_type: Optional project type selecting the breaking definition
 
     Returns:
         Flattened changes as formatted string (content between <FLATTENED> tags)
@@ -161,7 +176,7 @@ def flatten_changes(
     if not input_content or not input_content.strip():
         return ""
 
-    prompt = FLATTEN_PROMPT.format(notice=UNTRUSTED_NOTICE, input=wrap(input_content, "changes"))
+    prompt = build_flatten_prompt(input_content, project_type)
     response = llm_caller(prompt)
     return parse_flattened_response(response)
 
@@ -169,6 +184,7 @@ def flatten_changes(
 def flatten_changes_to_list(
     input_content: str,
     llm_caller: Callable[[str], str],
+    project_type: Optional[str] = None,
 ) -> List[Change]:
     """Flatten input to net state and return as Change objects.
 
@@ -177,6 +193,7 @@ def flatten_changes_to_list(
     Args:
         input_content: Raw changes (commits or text)
         llm_caller: Function that calls the LLM and returns response
+        project_type: Optional project type selecting the breaking definition
 
     Returns:
         List of Change objects representing the net state
@@ -184,6 +201,6 @@ def flatten_changes_to_list(
     if not input_content or not input_content.strip():
         return []
 
-    prompt = FLATTEN_PROMPT.format(notice=UNTRUSTED_NOTICE, input=wrap(input_content, "changes"))
+    prompt = build_flatten_prompt(input_content, project_type)
     response = llm_caller(prompt)
     return parse_flattened_changes(response)
