@@ -42,7 +42,6 @@ from content_scanner import (
     parse_validation_mode,
     ThreatLevel,
 )
-from model_capabilities import min_max_tokens, supports_sampling_params
 
 
 # Model configuration
@@ -57,11 +56,10 @@ def call_llm(prompt: str) -> str:
     kwargs = {
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max(50, min_max_tokens(MODEL)),
+        # Generous cap: models that think by default spend output tokens on it.
+        "max_tokens": 4096,
         "aws_region_name": AWS_REGION,
     }
-    if supports_sampling_params(MODEL):
-        kwargs["temperature"] = 0.0
 
     response = litellm.completion(**kwargs)
     return response.choices[0].message.content

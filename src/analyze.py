@@ -74,8 +74,6 @@ class AggregateUsage:
 # Global usage tracker
 _usage = AggregateUsage()
 
-# Warnings already emitted, so a fan-out phase does not repeat one per thread.
-_warned: set = set()
 
 from analyzer import parse_phase1_response
 from changelog import build_changelog_prompt, filter_changes, generate_changelog
@@ -95,11 +93,6 @@ from content_scanner import (
 from flatten import flatten_changes
 from input_validation import validate_inputs
 from map_reduce import determine_version_from_changes, process_large_input
-from model_capabilities import (
-    min_max_tokens,
-    resolve_thinking_param,
-    supports_sampling_params,
-)
 from model_config import ModelConfig
 from models import AnalysisResult, Change, ChangeStats, ReleaseMetadata
 from output_sanitizer import sanitize_changelog
@@ -153,12 +146,11 @@ def get_env_float(name: str, default: float) -> float:
         raise ValueError(f"Invalid float value for {name}: {value}") from e
 
 
-def get_env_optional_float(name: str, default: float) -> Optional[float]:
+def get_env_optional_float(name: str, default: Optional[float]) -> Optional[float]:
     """Get environment variable as float, treating an empty value as unset.
 
-    An explicitly empty input means "omit this parameter" -- the escape hatch
-    for a model that rejects it and that model_capabilities does not know about
-    yet.
+    An explicitly empty input means "omit this parameter", so the request only
+    carries what the workflow actually set.
     """
     value = os.environ.get(name)
     if value is None:
@@ -216,17 +208,6 @@ def log_warning(message: str) -> None:
     print(f"::warning::{message}")
 
 
-def warn_once(message: str) -> None:
-    """Log a warning at most once per run.
-
-    Phase 2 fans out across up to 10 threads and the map phase across 5, so an
-    unguarded per-call warning would repeat a dozen times.
-    """
-    if message not in _warned:
-        _warned.add(message)
-        log_warning(message)
-
-
 def set_output(name: str, value: str) -> None:
     """Set a GitHub Actions output."""
     github_output = os.environ.get("GITHUB_OUTPUT")
@@ -246,6 +227,12 @@ def set_output(name: str, value: str) -> None:
         print(f"OUTPUT {name}={preview}")
 
 
+THINKING_PARAMS: Dict[str, Dict[str, str]] = {
+    "adaptive": {"type": "adaptive"},
+    "off": {"type": "disabled"},
+}
+
+
 def build_completion_kwargs(
     model: str,
     prompt: str,
@@ -255,20 +242,19 @@ def build_completion_kwargs(
     thinking: str = "",
     extra_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Build the kwargs for a litellm.completion call for this model.
+    """Build the kwargs for a litellm.completion call.
 
-    Parameters that the model does not accept are omitted rather than sent and
-    rejected. Newer Anthropic models removed temperature/top_p/top_k, and run
-    thinking by default -- thinking tokens come out of max_tokens, so those
-    models also need an output floor or they return empty content.
+    Parameters are passed through as configured: the action does not decide
+    what a model accepts. A parameter the model rejects comes back as the
+    provider's own 400, naming it, and is fixed in the workflow inputs.
 
     Args:
         model: LiteLLM model string
         prompt: User prompt
         temperature: Sampling temperature, or None to omit it
-        max_tokens: Requested response token cap (raised to the model's floor)
+        max_tokens: Response token cap
         timeout: Request timeout in seconds
-        thinking: "", "adaptive" or "off"
+        thinking: "" (omit), "adaptive" or "off"
         extra_params: Raw passthrough merged last, so it can override anything
 
     Returns:
@@ -277,26 +263,15 @@ def build_completion_kwargs(
     kwargs: Dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max(max_tokens, min_max_tokens(model, thinking)),
+        "max_tokens": max_tokens,
         "timeout": timeout,
     }
 
     if temperature is not None:
-        if supports_sampling_params(model):
-            kwargs["temperature"] = temperature
-        else:
-            warn_once(
-                f"Model '{model}' does not accept `temperature`; ignoring it. "
-                f"Use the `thinking` input to tune this model instead."
-            )
+        kwargs["temperature"] = temperature
 
-    thinking_param = resolve_thinking_param(model, thinking)
-    if thinking_param is not None:
-        kwargs["thinking"] = thinking_param
-    elif thinking:
-        warn_once(
-            f"Model '{model}' does not support `thinking: {thinking}`; ignoring it."
-        )
+    if thinking in THINKING_PARAMS:
+        kwargs["thinking"] = THINKING_PARAMS[thinking]
 
     if extra_params:
         kwargs.update(extra_params)
@@ -561,7 +536,7 @@ def run_phase1(
                 model=model,
                 prompt=prompt,
                 temperature=temperature,
-                max_tokens=8000,  # Higher limit for reduce phase
+                max_tokens=max(max_tokens, 8000),  # Higher limit for reduce phase
                 timeout=timeout,
                 debug=debug,
                 thinking=thinking,
@@ -615,8 +590,8 @@ def run_phase1(
                     response, _ = call_llm_with_retry(
                         model=val_model,
                         prompt=prompt,
-                        temperature=0.0,  # Deterministic for validation
-                        max_tokens=10,  # Only need YES/NO
+                        temperature=temperature,
+                        max_tokens=max_tokens,
                         timeout=30,  # Shorter timeout for validation
                         debug=debug,
                         thinking=thinking,
@@ -641,8 +616,8 @@ def run_phase1(
                 response, _ = call_llm_with_retry(
                     model=val_model,
                     prompt=prompt,
-                    temperature=0.0,
-                    max_tokens=10,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
                     timeout=30,
                     debug=debug,
                     thinking=thinking,
@@ -1033,7 +1008,7 @@ def main() -> int:
         head_ref = get_env("INPUT_HEAD_REF", "HEAD")
         include_diffs = get_env("INPUT_INCLUDE_DIFFS", "**/openapi*.yaml,**/migrations/**,**/*.proto")
         max_commits = get_env_int("INPUT_MAX_COMMITS", 50)
-        temperature = get_env_optional_float("INPUT_TEMPERATURE", 0.2)
+        temperature = get_env_optional_float("INPUT_TEMPERATURE", None)
         max_tokens = get_env_int("INPUT_MAX_TOKENS", 4000)
         timeout = get_env_int("INPUT_TIMEOUT", 120)
         temperature_str = os.environ.get("INPUT_TEMPERATURE", "")
@@ -1167,8 +1142,8 @@ def main() -> int:
                 response, _ = call_llm_with_retry(
                     model=model_config.get_analysis_model(),
                     prompt=prompt,
-                    temperature=0.0,  # Deterministic for summarization
-                    max_tokens=2000,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
                     timeout=timeout,
                     debug=debug,
                     thinking=thinking,
@@ -1221,8 +1196,8 @@ def main() -> int:
                         response, _ = call_llm_with_retry(
                             model=model_config.get_analysis_model(),
                             prompt=prompt,
-                            temperature=0.0,  # Deterministic for structured extraction
-                            max_tokens=2000,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
                             timeout=timeout,
                             debug=debug,
                             thinking=thinking,

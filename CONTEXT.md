@@ -37,8 +37,6 @@ These are internal details that can change freely:
 - `flatten.py` - change consolidation
 - `map_reduce.py` - large input processing
 - `content_scanner.py` - security scanning
-- `model_capabilities.py` - which parameters each model accepts (the table of
-  model families is internal and expected to change as providers ship models)
 
 ### Internal Functions
 - All functions starting with underscore (`_validate*`, `_parse*`, `_extract*`)
