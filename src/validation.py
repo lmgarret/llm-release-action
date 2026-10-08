@@ -352,6 +352,47 @@ def strip_empty_sections(content: str) -> str:
     return "\n".join(result)
 
 
+def truncate_to_length(content: str, max_length: int) -> str:
+    """Cut a changelog down to max_length characters at a clean boundary.
+
+    Last-resort enforcement when the LLM keeps exceeding the limit. Cuts at
+    the last complete line that fits, then drops trailing headers left
+    without content. Falls back to a word boundary with an ellipsis when
+    not even the first line fits.
+
+    Args:
+        content: Changelog content
+        max_length: Maximum number of characters
+
+    Returns:
+        Content of at most max_length characters
+    """
+    if len(content) <= max_length:
+        return content
+
+    kept: List[str] = []
+    size = 0
+    for line in content.split("\n"):
+        added = len(line) + (1 if kept else 0)
+        if size + added > max_length:
+            break
+        kept.append(line)
+        size += added
+
+    # Drop trailing blank lines and headers whose content was cut off
+    while kept and (not kept[-1].strip() or kept[-1].lstrip().startswith("#")):
+        kept.pop()
+
+    if kept:
+        return "\n".join(kept)
+
+    # Single overlong line: cut at a word boundary and mark the cut
+    cut = content[: max(0, max_length - 1)]
+    if " " in cut and not content[len(cut)].isspace():
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip() + "\u2026" if max_length > 0 else ""
+
+
 def validate_changelog(
     changelog: str,
     language: str,

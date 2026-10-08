@@ -76,7 +76,7 @@ _usage = AggregateUsage()
 
 
 from analyzer import parse_phase1_response
-from changelog import build_changelog_prompt, filter_changes, generate_changelog
+from changelog import build_changelog_prompt, build_retry_prompt, filter_changes, generate_changelog
 from config import AudienceConfig, ChangelogConfig
 from context_loader import ContextResult, detect_staleness, load_context_files
 from diff_analyzer import DiffAnalysisResult, analyze_diffs
@@ -106,7 +106,13 @@ from prompt_builder import (
 )
 from repo_url import get_repository_url
 from text_splitter import needs_chunking
-from validation import ValidationConfig, generate_fallback_changelog, validate_changelog
+from validation import (
+    ValidationConfig,
+    ValidationResult,
+    generate_fallback_changelog,
+    truncate_to_length,
+    validate_changelog,
+)
 from version import SemanticVersion, detect_latest_tag, is_shallow_clone, parse_version
 
 
@@ -767,6 +773,23 @@ def run_phase1(
     return result
 
 
+def validate_audience_changelog(
+    changelog: str,
+    language: str,
+    changes: List[Change],
+    config: AudienceConfig,
+) -> ValidationResult:
+    """Validate a generated changelog against its audience's validation config."""
+    return validate_changelog(
+        changelog=changelog,
+        language=language,
+        changes=changes,
+        config=config.validation,
+        output_format=config.output_format,
+        preset=config.preset,
+    )
+
+
 def run_phase2(
     model: str,
     changes: List[Change],
@@ -848,22 +871,34 @@ default:
             base_url=task_base_url,
         )
 
-        # Call LLM
-        response, usage = call_llm_with_retry(
-            model=model,
-            prompt=prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=timeout,
-            debug=debug,
-            thinking=thinking,
-            extra_params=extra_params,
-        )
+        def generate(task_prompt: str) -> Tuple[str, ReleaseMetadata]:
+            response, _ = call_llm_with_retry(
+                model=model,
+                prompt=task_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                debug=debug,
+                thinking=thinking,
+                extra_params=extra_params,
+            )
+            return parse_phase2_response(response, config, language)
 
-        # Extract changelog and metadata from response
-        changelog_content, release_metadata = parse_phase2_response(
-            response, config, language
-        )
+        changelog_content, release_metadata = generate(prompt)
+
+        # Re-prompt with the validation errors until the changelog passes
+        validation_config = config.validation
+        if validation_config.enabled and validation_config.on_failure == "retry":
+            for attempt in range(1, validation_config.max_retries + 1):
+                result = validate_audience_changelog(changelog_content, language, changes, config)
+                if result.valid:
+                    break
+                print(
+                    f"  {audience_name}.{language}: validation failed, "
+                    f"retry {attempt}/{validation_config.max_retries}: {result.errors}"
+                )
+                retry_prompt = build_retry_prompt(prompt, changelog_content, result.errors, config)
+                changelog_content, release_metadata = generate(retry_prompt)
 
         return audience_name, language, changelog_content, release_metadata.to_dict()
 
@@ -957,14 +992,7 @@ def run_phase3(
         validation_config = config.validation
 
         for language, changelog in audience_changelogs.items():
-            result = validate_changelog(
-                changelog=changelog,
-                language=language,
-                changes=changes,
-                config=validation_config,
-                output_format=config.output_format,
-                preset=config.preset,
-            )
+            result = validate_audience_changelog(changelog, language, changes, config)
 
             if result.valid:
                 validated[audience_name][language] = changelog
@@ -984,8 +1012,19 @@ def run_phase3(
                         changes=changes,
                         language=language,
                     )
-                else:  # retry - but for now just use as-is
+                else:  # retry - already retried in Phase 2, keep the last attempt
                     validated[audience_name][language] = changelog
+
+            # Last resort: the length limit is a hard guarantee
+            if validation_config.enabled:
+                final = validated[audience_name][language]
+                truncated = truncate_to_length(final, validation_config.max_length)
+                if truncated != final:
+                    log_warning(
+                        f"{audience_name}.{language}: truncated from {len(final)} "
+                        f"to {len(truncated)} chars (max_length {validation_config.max_length})"
+                    )
+                    validated[audience_name][language] = truncated
 
             if result.warnings:
                 for warning in result.warnings:

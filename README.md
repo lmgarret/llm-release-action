@@ -597,6 +597,15 @@ interface AudienceConfig {
   // Internal content detection
   skip_internal_check?: boolean;       // Skip internal content leak detection, default: false
   internal_domain_patterns?: string[]; // Custom regex patterns for internal content detection
+
+  // Output validation
+  validation?: {
+    enabled?: boolean;             // default: true
+    min_length?: number;           // default: 50
+    max_length?: number;           // default: 100000. Lower values are enforced, see below
+    on_failure?: "retry" | "warn" | "error" | "fallback"; // default: "retry"
+    max_retries?: number;          // Re-prompts on failure when on_failure is "retry", default: 2
+  };
 }
 
 type Section = "breaking" | "security" | "features" | "improvements"
@@ -607,6 +616,23 @@ type Category = "breaking" | "security" | "feature" | "improvement"
               | "fix" | "performance" | "deprecation"
               | "infrastructure" | "docs" | "other";
 ```
+
+### Length Limits
+
+Setting `validation.max_length` below the default turns it into a hard limit, useful for app store release notes such as Google Play's 500-character limit:
+
+```yaml
+store:
+  preset: customer
+  output_format: plain
+  validation:
+    max_length: 500
+```
+
+The limit is enforced in three steps:
+1. The prompt asks for at most 85% of `max_length`, dropping lowest-priority items first.
+2. With `on_failure: retry`, a changelog that fails validation is re-prompted with the errors, up to `max_retries` times.
+3. If it is still too long, it is cut at the last complete line that fits.
 
 ### Custom Audience Example
 

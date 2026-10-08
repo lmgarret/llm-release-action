@@ -18,7 +18,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import regex
 
-from config import AudienceConfig, ChangelogConfig
+from config import DEFAULT_MAX_LENGTH, AudienceConfig, ChangelogConfig
 from content_scanner import sanitize_content
 from untrusted import UNTRUSTED_NOTICE, wrap
 from input_validation import (
@@ -480,6 +480,58 @@ def _format_change_for_prompt(
     return "\n".join(lines)
 
 
+# Share of validation.max_length the model is asked to target. Models count
+# characters poorly, so the margin absorbs overshoot before retries kick in.
+LENGTH_BUDGET_RATIO = 0.85
+
+
+def get_length_budget(config: AudienceConfig) -> Optional[int]:
+    """Return the character budget to put in the prompt, if any.
+
+    Only a validation.max_length below the default is treated as a real
+    budget; the default is just a guard against runaway generation.
+    """
+    validation = config.validation
+    if not validation.enabled or validation.max_length >= DEFAULT_MAX_LENGTH:
+        return None
+    return max(1, int(validation.max_length * LENGTH_BUDGET_RATIO))
+
+
+def build_retry_prompt(prompt: str, previous: str, errors: List[str], config: AudienceConfig) -> str:
+    """Build a follow-up prompt asking the LLM to fix a changelog that failed validation.
+
+    Args:
+        prompt: The original changelog prompt
+        previous: The rejected changelog
+        errors: Validation errors for the rejected changelog
+        config: Audience configuration
+
+    Returns:
+        Prompt string for the retry attempt
+    """
+    problems = "\n".join(f"- {error}" for error in errors)
+    length_note = ""
+    length_budget = get_length_budget(config)
+    if length_budget is not None:
+        length_note = (
+            f"\nThe previous attempt was {len(previous)} characters. "
+            f"Rewrite it to at most {length_budget} characters by dropping the lowest-priority items "
+            "and tightening wording.\n"
+        )
+
+    return f"""{prompt}
+
+## Previous Attempt (rejected)
+<PREVIOUS_ATTEMPT>
+{previous}
+</PREVIOUS_ATTEMPT>
+
+## Problems to Fix
+{problems}
+{length_note}
+Generate the corrected changelog now. Output only the changelog:"""
+
+
 def build_changelog_prompt(
     changes: List[Change],
     config: AudienceConfig,
@@ -536,9 +588,16 @@ def build_changelog_prompt(
 
     changes_text = "\n".join(changes_text_parts)
 
+    length_budget = get_length_budget(config)
+
     # Build format requirements
     format_reqs = []
     format_reqs.append(f"- Use {config.output_format} format")
+    if length_budget is not None:
+        format_reqs.append(
+            f"- HARD LENGTH LIMIT: at most {length_budget} characters in total, "
+            "counting headers, bullets, spaces and line breaks"
+        )
 
     if config.emojis:
         format_reqs.append("- Include appropriate emojis for section headers and key items")
@@ -552,6 +611,8 @@ def build_changelog_prompt(
 
     if config.summary_only:
         format_reqs.append("- Provide a concise summary rather than detailed bullet points")
+    elif length_budget is not None:
+        format_reqs.append("- List each change as a separate bullet point while staying within the length limit")
     else:
         # Explicit instruction to NOT consolidate
         format_reqs.append("- List EACH change as a SEPARATE bullet point - do NOT consolidate or merge items")
@@ -564,6 +625,13 @@ def build_changelog_prompt(
     format_reqs.append("- NEVER include empty sections - if a section has no relevant changes, omit it entirely")
 
     format_requirements = "\n".join(format_reqs)
+
+    if length_budget is not None:
+        coverage_instructions = f"""1. Stay within {length_budget} characters - this limit overrides every other instruction
+2. Sections are listed in priority order: if not everything fits, drop the lowest-priority items first, never truncate mid-sentence"""
+    else:
+        coverage_instructions = """1. Include ALL changes from the list above - do not skip any
+2. List each change as a SEPARATE item (one bullet per change, not consolidated)"""
 
     # Build the prompt with full persona
     prompt = f"""You are generating a changelog for version {version}.
@@ -589,8 +657,7 @@ Generate ALL content in {language}. All text, including section headers, descrip
 {format_requirements}
 
 ## Instructions
-1. Include ALL changes from the list above - do not skip any
-2. List each change as a SEPARATE item (one bullet per change, not consolidated)
+{coverage_instructions}
 3. Rephrase titles to be user-friendly but keep them specific (e.g., "AWS SES Integration" not "Email improvements")
 4. Write a brief one-line description for each item
 5. Organize into the specified sections

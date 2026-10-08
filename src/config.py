@@ -15,6 +15,11 @@ from presets import (
 )
 
 
+# Default validation.max_length. A lower value is treated as a real length
+# budget and is enforced during generation, not only checked afterwards.
+DEFAULT_MAX_LENGTH = 100000
+
+
 @dataclass
 class ValidationConfig:
     """Configuration for output validation."""
@@ -26,7 +31,7 @@ class ValidationConfig:
     check_language_match: bool = True
     check_references_changes: bool = True
     min_length: int = 50
-    max_length: int = 100000
+    max_length: int = DEFAULT_MAX_LENGTH
     on_failure: str = "retry"  # retry, warn, error, fallback
     max_retries: int = 2
 
@@ -265,6 +270,14 @@ def validate_changelog_config(config: Dict[str, Any]) -> List[str]:
                         errors.append(
                             f"{audience}: Invalid on_failure '{on_failure}'. Valid: {valid_on_failure}"
                         )
+                if "max_length" in validation:
+                    max_length = validation["max_length"]
+                    if not isinstance(max_length, int) or isinstance(max_length, bool) or max_length < 1:
+                        errors.append(f"{audience}: validation.max_length must be a positive integer")
+                if "max_retries" in validation:
+                    max_retries = validation["max_retries"]
+                    if not isinstance(max_retries, int) or isinstance(max_retries, bool) or max_retries < 0:
+                        errors.append(f"{audience}: validation.max_retries must be a non-negative integer")
 
         # Internal domain patterns validation
         if patterns := settings.get("internal_domain_patterns"):
