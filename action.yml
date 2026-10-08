@@ -70,7 +70,7 @@ inputs:
     required: false
     default: ''
   validate_injections:
-    description: 'Prompt injection validation mode. "pattern" = regex only (default), "both" = pattern + LLM, "llm" = LLM only, "none" = disabled'
+    description: 'Prompt injection validation mode for content_override. "pattern" = regex only (default), "both" = pattern + LLM, "llm" = LLM only, "none" = disabled. Commit messages, context files and diffs are not scanned; all untrusted text is embedded in prompts as marked data regardless of this setting.'
     required: false
     default: 'pattern'
   validation_model:
@@ -113,8 +113,11 @@ outputs:
     description: 'Calculated next semantic version'
     value: ${{ steps.analyze.outputs.next_version }}
   changelogs:
-    description: 'JSON object with changelogs: {audience: {language: markdown}}. Default: {default: {en: "..."}}. See README for schema.'
+    description: 'JSON object with changelogs: {audience: {language: markdown}}. Default: {default: {en: "..."}}. See README for schema. Untrusted text: pass it to scripts via env, never interpolate it into run or script.'
     value: ${{ steps.analyze.outputs.changelogs }}
+  changelog_files:
+    description: 'JSON object with the path of a file holding each changelog: {audience: {language: path}}. Files are under RUNNER_TEMP, readable by later steps in the same job. Lets steps use a changelog (e.g. gh release create --notes-file) without handling its text in shell.'
+    value: ${{ steps.analyze.outputs.changelog_files }}
   metadata:
     description: 'JSON object with release metadata per audience and language: {audience: {language: {title, summary, highlights}}}'
     value: ${{ steps.analyze.outputs.metadata }}
@@ -128,7 +131,7 @@ outputs:
     description: 'JSON array of detected breaking changes'
     value: ${{ steps.analyze.outputs.breaking_changes }}
   reasoning:
-    description: 'LLM reasoning for the version suggestion'
+    description: 'LLM reasoning for the version suggestion. Untrusted text: pass it to scripts via env, never interpolate it into run or script.'
     value: ${{ steps.analyze.outputs.reasoning }}
   usage:
     description: 'JSON object with LLM usage statistics: {total_calls, total_tokens, total_latency_ms, phase1_tokens, phase2_tokens, ...}'

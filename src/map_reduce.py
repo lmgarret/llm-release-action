@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, List, Optional, Tuple
 
 from content_scanner import sanitize_content, validate_response
+from untrusted import UNTRUSTED_NOTICE, wrap
 from flatten import flatten_changes_to_list
 from models import Change, ChangeCategory, Importance
 from text_splitter import chunk_with_overlap, needs_chunking
@@ -51,10 +52,10 @@ Example:
 
 IMPORTANT: Extract ALL changes. Do not filter or prioritize.
 
+{notice}
+
 Content to analyze:
----
 {content}
----
 
 <CHANGES>
 """
@@ -76,6 +77,8 @@ Do NOT over-consolidate. "OAuth support" and "Audit Trail" are DIFFERENT feature
 
 Output format - ONE LINE per change:
 [category|importance] Title | Description
+
+{notice}
 
 Changes (with duplicates from overlapping chunks):
 {changes_text}
@@ -204,7 +207,7 @@ def extract_changes_from_chunk(
     """
     # Sanitize content before embedding in prompt
     sanitized_chunk = sanitize_content(chunk)
-    prompt = MAP_PROMPT_TEMPLATE.format(content=sanitized_chunk)
+    prompt = MAP_PROMPT_TEMPLATE.format(notice=UNTRUSTED_NOTICE, content=wrap(sanitized_chunk, "release notes"))
     response = llm_caller(prompt)
 
     # Validate response for injection indicators
@@ -236,7 +239,7 @@ def reduce_changes(
         return all_changes
 
     changes_text = _changes_to_text(all_changes)
-    prompt = REDUCE_PROMPT_TEMPLATE.format(changes_text=changes_text)
+    prompt = REDUCE_PROMPT_TEMPLATE.format(notice=UNTRUSTED_NOTICE, changes_text=wrap(changes_text, "extracted changes"))
     response = llm_caller(prompt)
 
     # Validate response for injection indicators

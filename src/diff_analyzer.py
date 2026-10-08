@@ -20,6 +20,7 @@ from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 from unidiff import PatchSet
 
 from summarizing_map_reduce import estimate_tokens
+from untrusted import UNTRUSTED_NOTICE, wrap
 
 
 @dataclass
@@ -100,10 +101,10 @@ Output in this format:
 
 If a section has no items, include it empty (e.g., <added></added>).
 
+{notice}
+
 Diff to analyze:
----
 {diff_content}
----
 """
 
 
@@ -365,7 +366,7 @@ def extract_changes_from_diff(
     Returns:
         Extracted changes in structured format.
     """
-    prompt = DIFF_MAP_PROMPT.format(diff_content=diff_content)
+    prompt = DIFF_MAP_PROMPT.format(notice=UNTRUSTED_NOTICE, diff_content=wrap(diff_content, "diff"))
     response = llm_caller(prompt)
 
     # Extract content between <CHANGES> tags

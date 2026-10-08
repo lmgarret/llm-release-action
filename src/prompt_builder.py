@@ -9,7 +9,9 @@ import subprocess
 from dataclasses import dataclass
 from typing import List, Optional
 
+from content_scanner import sanitize_content
 from prompts import Phase1Config, render_phase1_prompt
+from untrusted import UNTRUSTED_NOTICE, code_fence, normalize, wrap
 
 
 @dataclass
@@ -31,8 +33,10 @@ def sanitize_message(message: str, max_length: int = 500) -> str:
     Returns:
         Sanitized message
     """
-    # Remove XML-like tags
-    sanitized = re.sub(r"<[^>]+>", "", message)
+    # Fold look-alike characters, then remove XML-like tags and known
+    # injection phrases. Prompts still embed the result as untrusted data.
+    sanitized = re.sub(r"<[^>]+>", "", normalize(message))
+    sanitized = sanitize_content(sanitized)
 
     # Truncate if too long
     if len(sanitized) > max_length:
@@ -266,13 +270,11 @@ def build_prompt(
         if diff:
             diff_section = f"""## Key File Diffs
 
-```diff
-{diff}
-```
+{wrap(code_fence(diff, "diff"), "file diffs")}
 """
 
     # System prompt with instructions
-    system = """You are a semantic versioning expert. Analyze the commits and determine the appropriate version bump.
+    system = f"""You are a semantic versioning expert. Analyze the commits and determine the appropriate version bump.
 
 ## Rules
 
@@ -285,6 +287,10 @@ def build_prompt(
 - **PATCH**: Bug fixes, documentation, internal changes
 
 Be CONSERVATIVE. When in doubt, choose the lower bump.
+
+## Untrusted Input
+
+{UNTRUSTED_NOTICE}
 
 ## Required Response Format
 
@@ -315,7 +321,7 @@ You MUST respond with these XML tags:
 </CHANGELOG>
 """
 
-    return f"{system}\n\n{metadata}\n{commit_section}\n{diff_section}"
+    return f"{system}\n\n{metadata}\n{wrap(commit_section, 'commits')}\n{diff_section}"
 
 
 def build_semantic_analysis_prompt(

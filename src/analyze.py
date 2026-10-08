@@ -9,8 +9,11 @@ This script implements a three-phase architecture:
 
 import json
 import os
+import re
 import sys
+import tempfile
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -99,6 +102,7 @@ from model_capabilities import (
 )
 from model_config import ModelConfig
 from models import AnalysisResult, Change, ChangeStats, ReleaseMetadata
+from output_sanitizer import sanitize_changelog
 from prompt_builder import (
     CommitInfo,
     build_prompt,
@@ -230,7 +234,9 @@ def set_output(name: str, value: str) -> None:
         with open(github_output, "a") as f:
             # Use heredoc syntax for multiline values
             if "\n" in value:
-                delimiter = f"EOF_{int(time.time())}"
+                # Unguessable, so generated text cannot end the value early
+                # and inject further outputs.
+                delimiter = f"EOF_{uuid.uuid4().hex}"
                 f.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
             else:
                 f.write(f"{name}={value}\n")
@@ -388,23 +394,54 @@ def call_llm_with_retry(
     raise RuntimeError(f"LLM call failed after {max_retries} attempts: {last_error}")
 
 
-def sanitize_changelog(changelog: str, max_size: int = 65536) -> str:
-    """Sanitize changelog output."""
-    import re
-
-    # Strip HTML tags
-    sanitized = re.sub(r"<[^>]+>", "", changelog)
-
-    # Remove javascript: URLs
-    sanitized = re.sub(r"javascript:[^\s\"']+", "", sanitized)
-
-    # Truncate if too large
-    if len(sanitized.encode("utf-8")) > max_size:
-        while len(sanitized.encode("utf-8")) > max_size - 20:
-            sanitized = sanitized[:-100]
-        sanitized = sanitized.rstrip() + "\n\n... (truncated)"
-
+def sanitize_changelogs(
+    changelogs: Dict[str, Dict[str, str]],
+    changelog_config: ChangelogConfig,
+) -> Dict[str, Dict[str, str]]:
+    """Size-limit every changelog, reducing HTML-format ones to the allowlist."""
+    sanitized: Dict[str, Dict[str, str]] = {}
+    for audience_name, by_language in changelogs.items():
+        audience = changelog_config.audiences.get(audience_name)
+        output_format = audience.output_format if audience else "markdown"
+        sanitized[audience_name] = {
+            language: sanitize_changelog(text, output_format=output_format)
+            for language, text in by_language.items()
+        }
     return sanitized
+
+
+CHANGELOG_FILE_EXTENSIONS = {"markdown": "md", "html": "html", "plain": "txt"}
+
+
+def write_changelog_files(
+    changelogs: Dict[str, Dict[str, str]],
+    changelog_config: ChangelogConfig,
+) -> Dict[str, Dict[str, str]]:
+    """Write each changelog to its own file so later steps never handle the text in shell.
+
+    Files go in a fresh directory under RUNNER_TEMP: outside the checkout, so
+    nothing picks them up by accident, and emptied by the runner after the job.
+
+    Returns:
+        Paths with the same shape as changelogs: {audience: {language: path}}
+    """
+    base_dir = os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()
+    out_dir = tempfile.mkdtemp(prefix="llm-release-action-", dir=base_dir)
+
+    paths: Dict[str, Dict[str, str]] = {}
+    for audience_name, by_language in changelogs.items():
+        audience = changelog_config.audiences.get(audience_name)
+        output_format = audience.output_format if audience else "markdown"
+        extension = CHANGELOG_FILE_EXTENSIONS.get(output_format, "txt")
+        paths[audience_name] = {}
+        for language, text in by_language.items():
+            # Names are already validated; keep them filename-safe regardless
+            stem = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{audience_name}.{language}")
+            path = os.path.join(out_dir, f"{stem}.{extension}")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            paths[audience_name][language] = path
+    return paths
 
 
 def parse_commits_json(json_str: str) -> List[CommitInfo]:
@@ -442,16 +479,10 @@ def parse_commits_json(json_str: str) -> List[CommitInfo]:
         if "repo" in item:
             commit_hash = f"[{item['repo']}] {commit_hash}"
 
-        # Sanitize message
-        message = sanitize_message(message)
-
-        # Detect breaking changes
-        has_breaking = has_breaking_change(message)
-
         commits.append(CommitInfo(
             hash=commit_hash,
-            message=message,
-            has_breaking_marker=has_breaking,
+            message=sanitize_message(message),
+            has_breaking_marker=has_breaking_change(message),
         ))
 
     return commits
@@ -1306,7 +1337,9 @@ def main() -> int:
         set_output("reasoning", analysis_result.reasoning)
 
         # Changelogs (always populated - uses default audience if no config)
+        changelogs = sanitize_changelogs(changelogs, changelog_config)
         set_output("changelogs", json.dumps(changelogs))
+        set_output("changelog_files", json.dumps(write_changelog_files(changelogs, changelog_config)))
         set_output("metadata", json.dumps(metadata))
 
         # Changes as JSON

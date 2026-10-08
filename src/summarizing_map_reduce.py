@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional
 
 from text_splitter import chunk_with_overlap
+from untrusted import UNTRUSTED_NOTICE, wrap
 
 
 # Default prompts for context summarization
@@ -40,10 +41,10 @@ CONTEXT_MAP_PROMPT = """Extract the KEY FACTS from this project documentation th
 
 Be concise. Output only the essential facts, one per line.
 
+{notice}
+
 Content:
----
 {content}
----
 
 <SUMMARY>
 """
@@ -58,10 +59,10 @@ Remove duplicates. Keep all unique, important facts about:
 
 Output a consolidated summary.
 
+{notice}
+
 Facts to consolidate:
----
 {summaries}
----
 
 <SUMMARY>
 """
@@ -116,8 +117,10 @@ class SummarizingMapReduce:
         """Initialize the summarizer.
 
         Args:
-            map_prompt: Prompt template for MAP phase. Must contain {content}.
-            reduce_prompt: Prompt template for REDUCE phase. Must contain {summaries}.
+            map_prompt: Prompt template for MAP phase. Must contain {content};
+                may contain {notice} for the untrusted-data notice.
+            reduce_prompt: Prompt template for REDUCE phase. Must contain {summaries};
+                may contain {notice}.
             chunk_size: Maximum characters per chunk.
             chunk_overlap: Overlap between chunks to preserve context.
             max_workers: Maximum parallel workers for MAP phase.
@@ -148,7 +151,9 @@ class SummarizingMapReduce:
         llm_caller: Callable[[str], str],
     ) -> str:
         """Summarize a single chunk (MAP phase)."""
-        prompt = self.map_prompt.format(content=chunk)
+        prompt = self.map_prompt.format(
+            notice=UNTRUSTED_NOTICE, content=wrap(chunk, "project documentation")
+        )
         response = llm_caller(prompt)
         return self._extract_summary(response)
 
@@ -159,7 +164,9 @@ class SummarizingMapReduce:
     ) -> str:
         """Consolidate summaries (REDUCE phase)."""
         combined = "\n\n".join(summaries)
-        prompt = self.reduce_prompt.format(summaries=combined)
+        prompt = self.reduce_prompt.format(
+            notice=UNTRUSTED_NOTICE, summaries=wrap(combined, "extracted facts")
+        )
         response = llm_caller(prompt)
         return self._extract_summary(response)
 
