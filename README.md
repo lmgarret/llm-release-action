@@ -713,7 +713,7 @@ Custom patterns are merged with built-in patterns. Invalid regex patterns are si
 
 What counts as a breaking change depends on who consumes the project. A large database migration in an Android app breaks nobody, since the app migrates its own data, but the same migration on a database shared with other services breaks every one of them.
 
-With `project_type: auto` (the default), a small LLM call classifies the project from the root README and cheap file signals (Gradle Android plugins, `AndroidManifest.xml`, `fastlane/metadata/android`, `package.json`, `pyproject.toml`, `Cargo.toml`, `action.yml`, OpenAPI/protobuf specs, Dockerfile, Helm charts). Low-confidence results fall back to `generic`. Set the type explicitly to skip detection. With `content_override`, `auto` is not detected and falls back to `generic`.
+With `project_type: auto` (the default), a small LLM call classifies the project from the root README and a two-level listing of the tracked files (e.g. `app/build.gradle.kts`, `fastlane/metadata/`, `package.json`, `api/openapi.yaml`, `Dockerfile`). Low-confidence results fall back to `generic`. Set the type explicitly to skip detection. With `content_override`, `auto` is not detected and falls back to `generic`.
 
 | Type | Consumers | Breaking when |
 |------|-----------|---------------|

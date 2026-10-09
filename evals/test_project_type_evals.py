@@ -36,34 +36,30 @@ DETECTION_CASES = [
     (
         "app",
         "# Pocket Notes\n\nA private, offline note-taking app for Android. Available on F-Droid and Google Play.",
-        [
-            "Android application module (app/build.gradle.kts)",
-            "AndroidManifest.xml present",
-            "Android store metadata (fastlane/metadata/android)",
-        ],
+        ["README.md", "app/build.gradle.kts", "app/src/", "build.gradle.kts", "fastlane/metadata/", "gradle/", "gradlew", "settings.gradle.kts"],
     ),
     (
         "library",
         "# tinydate\n\nA tiny date formatting library.\n\n```js\nimport { format } from 'tinydate'\n```",
-        ["package.json declares library entry points (main/exports)"],
+        ["README.md", "package.json", "src/format.ts", "src/index.ts", "test/format.test.ts", "tsconfig.json"],
     ),
     (
         "api",
         "# Acme Payments API\n\nPublic REST API for merchants. See the OpenAPI spec for endpoints and authentication.",
-        ["OpenAPI spec(s): api/openapi.yaml", "Dockerfile present"],
+        ["Dockerfile", "README.md", "api/openapi.yaml", "cmd/server/", "go.mod", "internal/handlers/"],
     ),
     (
         "service",
         "# Hoard\n\nSelf-hosted media server. Run it with Docker Compose and configure it via environment variables.",
-        ["Dockerfile present", "Docker Compose file present", "Helm chart present"],
+        ["Dockerfile", "README.md", "charts/hoard/", "docker-compose.yml", "migrations/", "src/"],
     ),
 ]
 
 
 class TestDetection:
-    @pytest.mark.parametrize("expected,readme,signals", DETECTION_CASES, ids=[c[0] for c in DETECTION_CASES])
-    def test_detects_type(self, expected: str, readme: str, signals: list) -> None:
-        response = call_llm(build_profile_prompt(readme, signals), max_tokens=300)
+    @pytest.mark.parametrize("expected,readme,tree", DETECTION_CASES, ids=[c[0] for c in DETECTION_CASES])
+    def test_detects_type(self, expected: str, readme: str, tree: list) -> None:
+        response = call_llm(build_profile_prompt(readme, tree), max_tokens=300)
         profile = parse_profile_response(response)
         assert profile.project_type == expected, f"Expected {expected}, got {profile.project_type}: {response}"
 
