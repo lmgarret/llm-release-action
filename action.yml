@@ -18,6 +18,14 @@ inputs:
     description: 'Optional model for Phase 2 changelog generation. Falls back to model if not set.'
     required: false
     default: ''
+  model_profile:
+    description: 'Optional model for project type detection (a small model is enough). Falls back to model if not set.'
+    required: false
+    default: ''
+  project_type:
+    description: 'Who consumes the project, which decides what counts as a breaking change: auto (detect from README and project files), library, api, service, app, or generic (type-agnostic rules). With app and no changelog_config, the default changelog is user-facing.'
+    required: false
+    default: 'auto'
   current_version:
     description: 'Current version to compare from. Auto-detects from latest semver tag if not provided.'
     required: false
@@ -133,6 +141,9 @@ outputs:
   reasoning:
     description: 'LLM reasoning for the version suggestion. Untrusted text: pass it to scripts via env, never interpolate it into run or script.'
     value: ${{ steps.analyze.outputs.reasoning }}
+  project_type:
+    description: 'Project type used for the analysis (library, api, service, app, or generic)'
+    value: ${{ steps.analyze.outputs.project_type }}
   usage:
     description: 'JSON object with LLM usage statistics: {total_calls, total_tokens, total_latency_ms, phase1_tokens, phase2_tokens, ...}'
     value: ${{ steps.analyze.outputs.usage }}
@@ -160,6 +171,8 @@ runs:
         INPUT_MODEL: ${{ inputs.model }}
         INPUT_MODEL_ANALYSIS: ${{ inputs.model_analysis }}
         INPUT_MODEL_CHANGELOG: ${{ inputs.model_changelog }}
+        INPUT_MODEL_PROFILE: ${{ inputs.model_profile }}
+        INPUT_PROJECT_TYPE: ${{ inputs.project_type }}
         INPUT_CURRENT_VERSION: ${{ inputs.current_version }}
         INPUT_HEAD_REF: ${{ inputs.head_ref }}
         INPUT_INCLUDE_DIFFS: ${{ inputs.include_diffs }}

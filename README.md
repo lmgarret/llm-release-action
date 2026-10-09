@@ -125,6 +125,8 @@ Related work is consolidated into a single, complete entry.
 | `model` | Yes | - | LiteLLM model string (e.g., `bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0`) |
 | `model_analysis` | No | `model` | Model for Phase 1 semantic analysis (falls back to `model`) |
 | `model_changelog` | No | `model` | Model for Phase 2 changelog generation (falls back to `model`) |
+| `model_profile` | No | `model` | Model for project type detection; a small model is enough (falls back to `model`) |
+| `project_type` | No | `auto` | `auto`, `library`, `api`, `service`, `app` or `generic`. Decides what counts as a breaking change. See [Project Type](#project-type). |
 | `current_version` | No | auto-detect | Version to compare from. Auto-detects from latest semver tag if not provided. |
 | `head_ref` | No | `HEAD` | Head ref to compare to |
 | `include_diffs` | No | `**/openapi*.yaml,**/migrations/**,**/*.proto` | File patterns for diff analysis (comma-separated globs) |
@@ -161,6 +163,7 @@ Related work is consolidated into a single, complete entry.
 | `stats` | `Stats` | Change counts by category and contributor count |
 | `breaking_changes` | `BreakingChange[]` | Extracted breaking changes with severity and migration steps |
 | `reasoning` | `string` | LLM explanation for the version suggestion |
+| `project_type` | `string` | Project type used for the analysis (`library`, `api`, `service`, `app` or `generic`) |
 | `usage` | `{[model]: UsageStats}` | Token counts and latency per model |
 | `warnings` | `string[]` | Warnings about context staleness, summarization, etc. |
 
@@ -597,6 +600,15 @@ interface AudienceConfig {
   // Internal content detection
   skip_internal_check?: boolean;       // Skip internal content leak detection, default: false
   internal_domain_patterns?: string[]; // Custom regex patterns for internal content detection
+
+  // Output validation
+  validation?: {
+    enabled?: boolean;             // default: true
+    min_length?: number;           // default: 50
+    max_length?: number;           // default: 100000. Lower values are enforced, see below
+    on_failure?: "retry" | "warn" | "error" | "fallback"; // default: "retry"
+    max_retries?: number;          // Re-prompts on failure when on_failure is "retry", default: 2
+  };
 }
 
 type Section = "breaking" | "security" | "features" | "improvements"
@@ -607,6 +619,23 @@ type Category = "breaking" | "security" | "feature" | "improvement"
               | "fix" | "performance" | "deprecation"
               | "infrastructure" | "docs" | "other";
 ```
+
+### Length Limits
+
+Setting `validation.max_length` below the default turns it into a hard limit, useful for app store release notes such as Google Play's 500-character limit:
+
+```yaml
+store:
+  preset: customer
+  output_format: plain
+  validation:
+    max_length: 500
+```
+
+The limit is enforced in three steps:
+1. The prompt asks for at most 85% of `max_length`, dropping lowest-priority items first.
+2. With `on_failure: retry`, a changelog that fails validation is re-prompted with the errors, up to `max_retries` times.
+3. If it is still too long, it is cut at the last complete line that fits.
 
 ### Custom Audience Example
 
@@ -679,6 +708,32 @@ changelog_config: |
 ```
 
 Custom patterns are merged with built-in patterns. Invalid regex patterns are silently skipped.
+
+## Project Type
+
+What counts as a breaking change depends on who consumes the project. A large database migration in an Android app breaks nobody, since the app migrates its own data, but the same migration on a database shared with other services breaks every one of them.
+
+With `project_type: auto` (the default), a small LLM call classifies the project from the root README and a two-level listing of the tracked files (e.g. `app/build.gradle.kts`, `fastlane/metadata/`, `package.json`, `api/openapi.yaml`, `Dockerfile`). Low-confidence results fall back to `generic`. Set the type explicitly to skip detection. With `content_override`, `auto` is not detected and falls back to `generic`.
+
+| Type | Consumers | Breaking when |
+|------|-----------|---------------|
+| `library` | Developers calling it (packages, SDKs, CLI tools, GitHub Actions) | Public functions, flags, inputs/outputs removed or changed; runtime support dropped |
+| `api` | External clients over the network | Endpoints or fields removed/changed, auth or error formats changed |
+| `service` | Operators deploying it themselves | Config or env vars renamed/required, manual upgrade steps |
+| `app` | End users | Minimum OS raised, features removed, user data lost, manual user action needed |
+| `generic` | Unknown | The type-agnostic rules (previous behavior) |
+
+For every type, a change is breaking only if an existing consumer has to act. Irreversibility alone (no rollback or downgrade) does not make a change breaking.
+
+For `app` projects without a `changelog_config`, the default changelog uses the `customer` preset (user-facing, no infrastructure or docs sections) instead of `developer`.
+
+```yaml
+- uses: lmgarret/llm-release-action@v1
+  with:
+    model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+    model_profile: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+    project_type: auto
+```
 
 ## Context Files (Project Understanding)
 
@@ -1053,7 +1108,7 @@ jobs:
 
 The action is conservative about version bumps:
 
-**MAJOR** (requires explicit evidence):
+**MAJOR** (requires explicit evidence, interpreted per [project type](#project-type)):
 - Commit contains `BREAKING CHANGE:` in body
 - Commit type ends with `!` (e.g., `feat!:`, `fix!:`)
 - API endpoint or field removal in OpenAPI diff

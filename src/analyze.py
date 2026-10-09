@@ -76,7 +76,7 @@ _usage = AggregateUsage()
 
 
 from analyzer import parse_phase1_response
-from changelog import build_changelog_prompt, filter_changes, generate_changelog
+from changelog import build_changelog_prompt, build_retry_prompt, filter_changes, generate_changelog
 from config import AudienceConfig, ChangelogConfig
 from context_loader import ContextResult, detect_staleness, load_context_files
 from diff_analyzer import DiffAnalysisResult, analyze_diffs
@@ -96,6 +96,7 @@ from map_reduce import determine_version_from_changes, process_large_input
 from model_config import ModelConfig
 from models import AnalysisResult, Change, ChangeStats, ReleaseMetadata
 from output_sanitizer import sanitize_changelog
+from project_profile import ProjectProfile, resolve_project_profile
 from prompt_builder import (
     CommitInfo,
     build_prompt,
@@ -106,7 +107,13 @@ from prompt_builder import (
 )
 from repo_url import get_repository_url
 from text_splitter import needs_chunking
-from validation import ValidationConfig, generate_fallback_changelog, validate_changelog
+from validation import (
+    ValidationConfig,
+    ValidationResult,
+    generate_fallback_changelog,
+    truncate_to_length,
+    validate_changelog,
+)
 from version import SemanticVersion, detect_latest_tag, is_shallow_clone, parse_version
 
 
@@ -481,6 +488,7 @@ def run_phase1(
     diff_analysis_content: Optional[str] = None,
     thinking: str = "",
     extra_params: Optional[Dict[str, Any]] = None,
+    project_profile: Optional[ProjectProfile] = None,
 ) -> AnalysisResult:
     """Run Phase 1: Semantic Analysis.
 
@@ -503,6 +511,7 @@ def run_phase1(
         validation_model: Model to use for LLM validation (defaults to model)
         context_content: Optional project context from context files
         diff_analysis_content: Optional structured diff analysis (replaces raw diffs when provided)
+        project_profile: Optional project profile selecting the breaking-change rules
 
     Returns:
         AnalysisResult with bump, reasoning, and changes
@@ -511,6 +520,7 @@ def run_phase1(
 
     # Use provided validation model or fall back to main model
     val_model = validation_model if validation_model else model
+    project_type = project_profile.project_type if project_profile else None
 
     # Check if we need map/reduce for large content_override
     if content_override and needs_chunking(content_override, threshold=2000):
@@ -649,7 +659,7 @@ def run_phase1(
             )
             return response
 
-        flattened_content = flatten_changes(content_override, flatten_llm_caller)
+        flattened_content = flatten_changes(content_override, flatten_llm_caller, project_type)
         if flattened_content:
             print(f"Flattened content ({len(flattened_content)} chars)")
             content_override = flattened_content
@@ -661,6 +671,7 @@ def run_phase1(
             base_version=base_version,
             content_override=content_override,
             context_content=context_content,
+            project_profile=project_profile,
         )
     else:
         # Phase 0: Flatten commits to net state
@@ -686,7 +697,7 @@ def run_phase1(
                 )
                 return response
 
-            flattened_content = flatten_changes(commits_text, flatten_llm_caller)
+            flattened_content = flatten_changes(commits_text, flatten_llm_caller, project_type)
             if flattened_content:
                 print(f"Flattened content ({len(flattened_content)} chars)")
                 # Use flattened content instead of raw commits
@@ -695,6 +706,7 @@ def run_phase1(
                     base_version=base_version,
                     content_override=flattened_content,
                     context_content=context_content,
+                    project_profile=project_profile,
                 )
             else:
                 print("Flatten returned empty, using original commits")
@@ -706,6 +718,7 @@ def run_phase1(
                         max_commits=max_commits,
                         diff_analysis_content=diff_analysis_content,
                         context_content=context_content,
+                        project_profile=project_profile,
                     )
                 else:
                     diff_patterns = [p.strip() for p in include_diffs.split(",") if p.strip()]
@@ -717,6 +730,7 @@ def run_phase1(
                         base_ref=base_version,
                         head_ref=head_ref,
                         context_content=context_content,
+                        project_profile=project_profile,
                     )
         else:
             # Use structured diff analysis if available, otherwise use raw diffs
@@ -727,6 +741,7 @@ def run_phase1(
                     max_commits=max_commits,
                     diff_analysis_content=diff_analysis_content,
                     context_content=context_content,
+                    project_profile=project_profile,
                 )
             else:
                 diff_patterns = [p.strip() for p in include_diffs.split(",") if p.strip()]
@@ -738,6 +753,7 @@ def run_phase1(
                     base_ref=base_version,
                     head_ref=head_ref,
                     context_content=context_content,
+                    project_profile=project_profile,
                 )
 
     print(f"Prompt built ({len(prompt)} chars)")
@@ -767,6 +783,28 @@ def run_phase1(
     return result
 
 
+def validate_audience_changelog(
+    changelog: str,
+    language: str,
+    changes: List[Change],
+    config: AudienceConfig,
+) -> ValidationResult:
+    """Validate a generated changelog against its audience's validation config."""
+    return validate_changelog(
+        changelog=changelog,
+        language=language,
+        changes=changes,
+        config=config.validation,
+        output_format=config.output_format,
+        preset=config.preset,
+    )
+
+
+def get_default_preset(project_type: str) -> str:
+    """Preset for the default audience when no changelog_config is given."""
+    return "customer" if project_type == "app" else "developer"
+
+
 def run_phase2(
     model: str,
     changes: List[Change],
@@ -779,6 +817,7 @@ def run_phase2(
     debug: bool,
     thinking: str = "",
     extra_params: Optional[Dict[str, Any]] = None,
+    project_type: str = "generic",
 ) -> tuple[Dict[str, Dict[str, str]], Dict[str, Dict[str, dict]]]:
     """Run Phase 2: Changelog Generation (parallel execution).
 
@@ -792,6 +831,7 @@ def run_phase2(
         max_tokens: Max response tokens
         timeout: Request timeout
         debug: Enable debug logging
+        project_type: Project type; selects the default audience when no config is given
 
     Returns:
         Tuple of (changelogs dict, metadata dict)
@@ -802,11 +842,13 @@ def run_phase2(
     metadata: Dict[str, Dict[str, dict]] = {}
 
     if not changelog_config.audiences:
-        # Create default audience when no config provided
-        print("No changelog_config provided, using default audience")
-        changelog_config = ChangelogConfig.from_yaml("""
+        # Create default audience when no config provided. End-user apps get
+        # a user-facing changelog, everything else a developer one.
+        default_preset = get_default_preset(project_type)
+        print(f"No changelog_config provided, using default audience (preset: {default_preset})")
+        changelog_config = ChangelogConfig.from_yaml(f"""
 default:
-  preset: developer
+  preset: {default_preset}
   languages: [en]
 """)
 
@@ -848,22 +890,34 @@ default:
             base_url=task_base_url,
         )
 
-        # Call LLM
-        response, usage = call_llm_with_retry(
-            model=model,
-            prompt=prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=timeout,
-            debug=debug,
-            thinking=thinking,
-            extra_params=extra_params,
-        )
+        def generate(task_prompt: str) -> Tuple[str, ReleaseMetadata]:
+            response, _ = call_llm_with_retry(
+                model=model,
+                prompt=task_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                debug=debug,
+                thinking=thinking,
+                extra_params=extra_params,
+            )
+            return parse_phase2_response(response, config, language)
 
-        # Extract changelog and metadata from response
-        changelog_content, release_metadata = parse_phase2_response(
-            response, config, language
-        )
+        changelog_content, release_metadata = generate(prompt)
+
+        # Re-prompt with the validation errors until the changelog passes
+        validation_config = config.validation
+        if validation_config.enabled and validation_config.on_failure == "retry":
+            for attempt in range(1, validation_config.max_retries + 1):
+                result = validate_audience_changelog(changelog_content, language, changes, config)
+                if result.valid:
+                    break
+                print(
+                    f"  {audience_name}.{language}: validation failed, "
+                    f"retry {attempt}/{validation_config.max_retries}: {result.errors}"
+                )
+                retry_prompt = build_retry_prompt(prompt, changelog_content, result.errors, config)
+                changelog_content, release_metadata = generate(retry_prompt)
 
         return audience_name, language, changelog_content, release_metadata.to_dict()
 
@@ -957,14 +1011,7 @@ def run_phase3(
         validation_config = config.validation
 
         for language, changelog in audience_changelogs.items():
-            result = validate_changelog(
-                changelog=changelog,
-                language=language,
-                changes=changes,
-                config=validation_config,
-                output_format=config.output_format,
-                preset=config.preset,
-            )
+            result = validate_audience_changelog(changelog, language, changes, config)
 
             if result.valid:
                 validated[audience_name][language] = changelog
@@ -984,8 +1031,19 @@ def run_phase3(
                         changes=changes,
                         language=language,
                     )
-                else:  # retry - but for now just use as-is
+                else:  # retry - already retried in Phase 2, keep the last attempt
                     validated[audience_name][language] = changelog
+
+            # Last resort: the length limit is a hard guarantee
+            if validation_config.enabled:
+                final = validated[audience_name][language]
+                truncated = truncate_to_length(final, validation_config.max_length)
+                if truncated != final:
+                    log_warning(
+                        f"{audience_name}.{language}: truncated from {len(final)} "
+                        f"to {len(truncated)} chars (max_length {validation_config.max_length})"
+                    )
+                    validated[audience_name][language] = truncated
 
             if result.warnings:
                 for warning in result.warnings:
@@ -1017,6 +1075,10 @@ def main() -> int:
         dry_run = get_env_bool("INPUT_DRY_RUN", False)
         content_override = os.environ.get("INPUT_CONTENT_OVERRIDE", "")
         changelog_config_str = os.environ.get("INPUT_CHANGELOG_CONFIG", "")
+
+        # Project profiling settings
+        project_type_input = get_env("INPUT_PROJECT_TYPE", "auto").strip().lower() or "auto"
+        model_profile = get_env("INPUT_MODEL_PROFILE", "").strip() or model
 
         # Context files settings
         context_files_patterns = os.environ.get("INPUT_CONTEXT_FILES", "")
@@ -1061,6 +1123,7 @@ def main() -> int:
             temperature=temperature_str,
             thinking=thinking,
             extra_llm_params=extra_llm_params_str,
+            project_type=project_type_input,
         )
 
         if not validation_result.valid:
@@ -1129,6 +1192,46 @@ def main() -> int:
 
         # Initialize warnings collection
         all_warnings: List[str] = []
+
+        # === Project Profile ===
+        log_group("Project profile")
+
+        def profile_llm_caller(prompt: str) -> str:
+            response, _ = call_llm_with_retry(
+                model=model_profile,
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                debug=debug,
+                thinking=thinking,
+                extra_params=extra_llm_params,
+            )
+            return response
+
+        try:
+            if use_content_override and project_type_input == "auto":
+                # The checked-out repo is not necessarily the one described by the content
+                project_profile = ProjectProfile(
+                    reason="Not detected with content_override; set project_type explicitly",
+                    source="default",
+                )
+            else:
+                project_profile = resolve_project_profile(project_type_input, profile_llm_caller, root_dir=".")
+        except Exception as e:
+            # Profiling is best effort: fall back to the generic rules
+            log_warning(f"Project profiling failed, using generic rules: {e}")
+            all_warnings.append(f"Project profiling failed: {e}")
+            project_profile = ProjectProfile(source="default")
+
+        print(f"Project type: {project_profile.project_type} (source: {project_profile.source})")
+        if project_profile.confidence:
+            print(f"Confidence: {project_profile.confidence}")
+        if project_profile.consumers:
+            print(f"Consumers: {project_profile.consumers}")
+        if project_profile.reason:
+            print(f"Reason: {project_profile.reason}")
+        log_group_end()
 
         # === Load Context Files ===
         context_content: Optional[str] = None
@@ -1249,6 +1352,7 @@ def main() -> int:
             diff_analysis_content=diff_analysis_content,
             thinking=thinking,
             extra_params=extra_llm_params,
+            project_profile=project_profile,
         )
 
         # === Staleness Detection ===
@@ -1292,6 +1396,7 @@ def main() -> int:
             debug=debug,
             thinking=thinking,
             extra_params=extra_llm_params,
+            project_type=project_profile.project_type,
         )
 
         # === PHASE 3: Validation ===
@@ -1310,6 +1415,7 @@ def main() -> int:
         set_output("current_version", str(current_version))
         set_output("next_version", str(next_version))
         set_output("reasoning", analysis_result.reasoning)
+        set_output("project_type", project_profile.project_type)
 
         # Changelogs (always populated - uses default audience if no config)
         changelogs = sanitize_changelogs(changelogs, changelog_config)
