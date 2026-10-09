@@ -522,9 +522,7 @@ def build_retry_prompt(prompt: str, previous: str, errors: List[str], config: Au
     return f"""{prompt}
 
 ## Previous Attempt (rejected)
-<PREVIOUS_ATTEMPT>
-{previous}
-</PREVIOUS_ATTEMPT>
+{wrap(previous, "previous attempt")}
 
 ## Problems to Fix
 {problems}

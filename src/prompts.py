@@ -84,7 +84,8 @@ Be CONSERVATIVE with major bumps. When in doubt, choose the lower bump.
 
 ## Project Type: {{ project_type }}
 {% if project_consumers %}
-Detected consumers: {{ project_consumers }}
+Detected consumers:
+{{ project_consumers }}
 {% endif %}
 A change is breaking only if an existing consumer must change something on their side to keep working.
 Being irreversible (no rollback or downgrade) does NOT make a change breaking on its own.
@@ -489,6 +490,11 @@ def render_phase1_prompt(config: Phase1Config) -> str:
     if config.context_content:
         context_content = wrap(config.context_content, "project context files")
 
+    # Inferred by an earlier LLM call from the README
+    project_consumers = None
+    if config.project_consumers:
+        project_consumers = wrap(config.project_consumers, "project profile")
+
     return PHASE1_TEMPLATE.render(
         untrusted_notice=UNTRUSTED_NOTICE,
         base_version=config.base_version,
@@ -503,7 +509,7 @@ def render_phase1_prompt(config: Phase1Config) -> str:
         next_version_placeholder=config.next_version_placeholder,
         context_content=context_content,
         project_type=config.project_type,
-        project_consumers=config.project_consumers,
+        project_consumers=project_consumers,
         breaking_rules=config.breaking_rules,
     )
 
