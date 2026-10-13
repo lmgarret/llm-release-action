@@ -1,0 +1,7 @@
+rules:
+  # release.yml tests the action from the commit being released with `uses: ./`.
+  # Keep it until the `$/` self-repository syntax is confirmed to work for a
+  # root-level action.
+  self-repository:
+    ignore:
+      - release.yml

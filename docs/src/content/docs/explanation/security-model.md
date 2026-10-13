@@ -25,6 +25,19 @@ What the action guarantees:
 - Markdown and plain-text changelogs are output unchanged; escaping is up to whatever renders them (GitHub sanitizes release notes).
 - Changelogs are limited to 64KB.
 
+## Supply chain
+
+The action runs in your workflow next to your provider API key, so a compromised release
+or dependency would run there too.
+
+- Pin the action to a full commit SHA, with the version in a comment, and let Dependabot
+  bump it: `uses: lmgarret/llm-release-action@<sha> # v1.2.0`. Tags like `@v1` move
+  with every release.
+- Every Python dependency, transitive ones included, is pinned to an exact version with
+  hashes and installed with `pip install --require-hashes`, so a new or tampered upstream
+  release can't slip in.
+- Release tags (`vX.Y.Z`) and their releases are immutable.
+
 ## Prompt injection defense
 
 The worst case the design accepts is a wrong bump level or misleading changelog text,

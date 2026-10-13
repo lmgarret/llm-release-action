@@ -24,6 +24,6 @@ It covers:
 Unit tests don't need credentials:
 
 ```bash
-pip install -r tests/requirements.txt
+pip install -r src/requirements.txt -r tests/requirements.txt
 PYTHONPATH=src pytest tests/
 ```

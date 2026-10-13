@@ -2,7 +2,8 @@
 
 ## Reporting Vulnerabilities
 
-Please report security vulnerabilities by emailing nosov.joe@gmail.com.
+Please report security vulnerabilities through
+[GitHub private vulnerability reporting](https://github.com/lmgarret/llm-release-action/security/advisories/new).
 
 Do not create public GitHub issues for security vulnerabilities.
 
@@ -61,9 +62,12 @@ JavaScript code. Escape Markdown changelogs for whatever renders them.
 
 ### Supply Chain Security
 
-- Pin this action to a specific version: `@v1.0.0`
+- Pin this action to a full commit SHA (`@<sha> # v1.2.0`) and let Dependabot
+  bump it; `@v1` moves with every release
 - Review the action source before use
-- LiteLLM dependency is pinned to a specific version
+- All Python dependencies, transitive ones included, are pinned with hashes and
+  installed with `--require-hashes`
+- Release tags (`vX.Y.Z`) and their releases are immutable
 
 ## Supported Versions
 
