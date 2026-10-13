@@ -1,0 +1,97 @@
+---
+title: LLM Release Action
+description: Analyze commits with an LLM, get a semantic version bump and changelogs for every audience and language.
+template: splash
+hero:
+  image:
+    html: |
+      <div class="release-demo" aria-label="Example: six commits become version v1.4.0 with a two-line changelog">
+        <div class="rd-card">
+          <div class="rd-title">Commits since v1.3.2</div>
+          <ul class="rd-commits">
+            <li class="rd-dropped"><code>c08d531</code> revert: Stripe payment</li>
+            <li><code>9f1e2aa</code> feat: OAuth scope support</li>
+            <li><code>e44b07f</code> feat: add dark mode</li>
+            <li class="rd-dropped"><code>3c9a4d2</code> feat: add Stripe payment</li>
+            <li><code>7bd2e10</code> fix: OAuth token refresh</li>
+            <li><code>a1f3c9e</code> feat: add OAuth login</li>
+          </ul>
+        </div>
+        <div class="rd-arrow" aria-hidden="true">↓</div>
+        <div class="rd-card rd-output">
+          <div class="rd-title"><span class="rd-version">v1.4.0</span><span class="rd-bump">minor</span></div>
+          <div class="rd-heading">Features</div>
+          <ul class="rd-changelog">
+            <li>OAuth 2.0 login with token refresh and scope support</li>
+            <li>Dark mode</li>
+          </ul>
+        </div>
+      </div>
+  tagline: Analyze commits with an LLM, get a semantic version bump and changelogs written for developers, customers, executives and more, in any language.
+  actions:
+    - text: Your first release
+      link: /llm-release-action/tutorials/first-release/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/lmgarret/llm-release-action
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## What it does
+
+<CardGrid>
+  <Card title="Semantic version analysis" icon="seti:git">
+    Reads the commits since the last semver tag, detects breaking changes from commit
+    markers and diffs, and suggests `major`, `minor` or `patch`. Conservative: a major
+    bump needs explicit evidence.
+  </Card>
+  <Card title="Multi-audience changelogs" icon="document">
+    One run writes a changelog per audience (developer, customer, executive, marketing,
+    security, ops) and per language, each with its own tone, sections and filters.
+  </Card>
+  <Card title="Any LLM provider" icon="puzzle">
+    Works with every provider [LiteLLM](https://docs.litellm.ai/docs/providers) supports:
+    AWS Bedrock, Anthropic, OpenAI, Azure and more. Reports token usage per model.
+  </Card>
+  <Card title="Net-state changelogs" icon="approve-check">
+    A feature added then reverted doesn't show up. Related commits become one entry.
+  </Card>
+</CardGrid>
+
+## Find your way
+
+These docs follow the [Diátaxis](https://diataxis.fr/) framework.
+
+<CardGrid>
+  <LinkCard
+    title="Tutorials"
+    description="Learn by doing: set up the action and publish your first release."
+    href="/llm-release-action/tutorials/first-release/"
+  />
+  <LinkCard
+    title="How-to guides"
+    description="Recipes for specific goals: PR comments, translations, app store notes, multi-repo releases..."
+    href="/llm-release-action/how-to/create-github-release/"
+  />
+  <LinkCard
+    title="Reference"
+    description="Every input, output, config field and default."
+    href="/llm-release-action/reference/inputs/"
+  />
+  <LinkCard
+    title="Explanation"
+    description="How the analysis works, why bumps are conservative, and the security model."
+    href="/llm-release-action/explanation/how-it-works/"
+  />
+</CardGrid>
+
+## For LLMs and agents
+
+The whole documentation is available as plain text:
+
+- [`llms.txt`](/llm-release-action/llms.txt): index of the documentation
+- [`llms-full.txt`](/llm-release-action/llms-full.txt): every page in one file
+- [`llms-small.txt`](/llm-release-action/llms-small.txt): a condensed version for small context windows

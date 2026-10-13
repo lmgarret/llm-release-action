@@ -46,3 +46,6 @@ Thumbs.db
 
 # OpenSpec (local development only)
 openspec/
+
+# Local agent worktrees
+.claude/worktrees/

@@ -1,0 +1,109 @@
+/* Accent: Azure blue, matching the logo */
+:root {
+  --sl-color-accent-low: #172554;
+  --sl-color-accent: #2563eb;
+  --sl-color-accent-high: #bfdbfe;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #dbeafe;
+  --sl-color-accent: #2563eb;
+  --sl-color-accent-high: #1e3a8a;
+}
+
+/* Landing page hero: commits -> release example */
+.release-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: min(100%, 26rem);
+  font-size: var(--sl-text-sm);
+  text-align: start;
+}
+
+.release-demo .rd-card {
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.75rem;
+  background: var(--sl-color-gray-6);
+  padding: 0.9rem 1.1rem;
+}
+
+.release-demo .rd-output {
+  border-color: var(--sl-color-accent);
+  box-shadow: 0 0 0 3px var(--sl-color-accent-low);
+}
+
+.release-demo .rd-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--sl-color-gray-2);
+  font-weight: 600;
+}
+
+.release-demo ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.release-demo li + li {
+  margin-top: 0.25rem;
+}
+
+.release-demo .rd-commits li {
+  color: var(--sl-color-gray-2);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+}
+
+.release-demo .rd-commits code {
+  color: var(--sl-color-gray-3);
+  background: none;
+  padding: 0;
+}
+
+.release-demo .rd-dropped {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.release-demo .rd-arrow {
+  align-self: center;
+  color: var(--sl-color-accent);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.release-demo .rd-version {
+  color: var(--sl-color-white);
+  font-size: var(--sl-text-lg);
+}
+
+.release-demo .rd-bump {
+  border-radius: 999px;
+  background: var(--sl-color-accent);
+  color: #fff;
+  padding: 0.05rem 0.55rem;
+  font-size: var(--sl-text-xs);
+}
+
+.release-demo .rd-heading {
+  color: var(--sl-color-white);
+  font-weight: 600;
+}
+
+.release-demo .rd-changelog li {
+  position: relative;
+  padding-inline-start: 1em;
+  color: var(--sl-color-gray-2);
+}
+
+.release-demo .rd-changelog li::before {
+  content: '•';
+  position: absolute;
+  inset-inline-start: 0.2em;
+  color: var(--sl-color-accent);
+}
