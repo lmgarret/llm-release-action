@@ -162,7 +162,7 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
-        pip install -r ${{ github.action_path }}/src/requirements.txt
+        pip install --require-hashes -r "${{ github.action_path }}/src/requirements.txt"
 
     - name: Run analysis
       id: analyze

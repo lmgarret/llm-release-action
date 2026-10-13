@@ -9,16 +9,20 @@ on:
         default: 'false'
         type: boolean
 
+permissions: {}
+
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment: release
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Get current version
         id: current
@@ -71,13 +75,27 @@ jobs:
           EOF
           cat "$CHANGELOG_FILE" >> $GITHUB_STEP_SUMMARY
 
+      # Pushes go through the release App rather than GITHUB_TOKEN so the tag
+      # ruleset can protect v* and let only the App bypass it. The token is
+      # minted after the LLM step, which never sees write credentials.
+      - name: Create release App token
+        if: ${{ !inputs.dry_run }}
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Create GitHub Release
         if: ${{ !inputs.dry_run }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ steps.llm.outputs.next_version }}
           CHANGELOG_FILE: ${{ steps.changelog.outputs.path }}
         run: |
+          gh auth setup-git
+
           # Create version tag
           git tag "$VERSION"
           git push origin "$VERSION"
