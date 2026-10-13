@@ -9,7 +9,6 @@ Validates generated changelogs before output to catch:
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from models import Change
 
@@ -41,8 +40,8 @@ class ValidationResult:
     """Result of validation."""
 
     valid: bool
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 # Common placeholder patterns that indicate LLM failures
@@ -112,7 +111,7 @@ def detect_language(text: str) -> str:
         return "unknown"
 
 
-def check_markdown_structure(content: str) -> List[str]:
+def check_markdown_structure(content: str) -> list[str]:
     """Check if content has valid markdown structure.
 
     Args:
@@ -145,7 +144,7 @@ def check_markdown_structure(content: str) -> List[str]:
     return issues
 
 
-def check_html_structure(content: str) -> List[str]:
+def check_html_structure(content: str) -> list[str]:
     """Check if content has valid HTML structure.
 
     Args:
@@ -173,7 +172,7 @@ def check_html_structure(content: str) -> List[str]:
     return issues
 
 
-def check_references_changes(content: str, changes: List[Change]) -> List[str]:
+def check_references_changes(content: str, changes: list[Change]) -> list[str]:
     """Check if changelog references actual changes.
 
     This is a heuristic check to catch hallucinations.
@@ -208,7 +207,7 @@ def check_references_changes(content: str, changes: List[Change]) -> List[str]:
     return issues
 
 
-def check_empty_sections(content: str) -> List[str]:
+def check_empty_sections(content: str) -> list[str]:
     """Check for empty sections in changelog.
 
     Detects patterns like:
@@ -221,7 +220,6 @@ def check_empty_sections(content: str) -> List[str]:
     Returns:
         List of empty section issues
     """
-    import re
 
     issues = []
     lines = content.strip().split("\n")
@@ -229,7 +227,7 @@ def check_empty_sections(content: str) -> List[str]:
     current_section = None
     section_has_content = False
 
-    for i, line in enumerate(lines):
+    for line in lines:
         stripped = line.strip()
 
         # Is this a level-2 section header? (## but not ###)
@@ -254,10 +252,10 @@ def check_empty_sections(content: str) -> List[str]:
 
 def check_internal_content(
     content: str,
-    preset: Optional[str] = None,
+    preset: str | None = None,
     skip_internal_check: bool = False,
-    custom_patterns: Optional[List[str]] = None,
-) -> List[str]:
+    custom_patterns: list[str] | None = None,
+) -> list[str]:
     """Check for leaked internal content in changelogs.
 
     By default, applies to ALL presets except developer and ops (which explicitly
@@ -332,7 +330,7 @@ def strip_empty_sections(content: str) -> str:
             # Flush previous section if it had content
             if current_section_start >= 0:
                 # Check if section had any non-empty content
-                section_content = [l for l in current_section_lines if l.strip() and not l.strip().startswith("##")]
+                section_content = [ln for ln in current_section_lines if ln.strip() and not ln.strip().startswith("##")]
                 if section_content:
                     result.extend(current_section_lines)
 
@@ -345,7 +343,7 @@ def strip_empty_sections(content: str) -> str:
 
     # Flush last section
     if current_section_start >= 0:
-        section_content = [l for l in current_section_lines if l.strip() and not l.strip().startswith("##")]
+        section_content = [ln for ln in current_section_lines if ln.strip() and not ln.strip().startswith("##")]
         if section_content:
             result.extend(current_section_lines)
 
@@ -370,7 +368,7 @@ def truncate_to_length(content: str, max_length: int) -> str:
     if len(content) <= max_length:
         return content
 
-    kept: List[str] = []
+    kept: list[str] = []
     size = 0
     for line in content.split("\n"):
         added = len(line) + (1 if kept else 0)
@@ -396,12 +394,12 @@ def truncate_to_length(content: str, max_length: int) -> str:
 def validate_changelog(
     changelog: str,
     language: str,
-    changes: List[Change],
+    changes: list[Change],
     config: ValidationConfig,
     output_format: str = "markdown",
-    preset: Optional[str] = None,
+    preset: str | None = None,
     skip_internal_check: bool = False,
-    internal_domain_patterns: Optional[List[str]] = None,
+    internal_domain_patterns: list[str] | None = None,
 ) -> ValidationResult:
     """Validate a generated changelog.
 
@@ -418,8 +416,8 @@ def validate_changelog(
     Returns:
         ValidationResult with valid flag and issues
     """
-    errors: List[str] = []
-    warnings: List[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
 
     if not config.enabled:
         return ValidationResult(valid=True)
@@ -427,9 +425,7 @@ def validate_changelog(
     # Length check - minimum
     if config.check_not_empty:
         if len(changelog.strip()) < config.min_length:
-            errors.append(
-                f"Changelog too short ({len(changelog)} < {config.min_length} chars)"
-            )
+            errors.append(f"Changelog too short ({len(changelog)} < {config.min_length} chars)")
 
     # Length check - maximum
     if len(changelog) > config.max_length:
@@ -474,9 +470,7 @@ def validate_changelog(
             expected_base = language.split("-")[0].lower()
             detected_base = detected.lower()
             if detected_base != expected_base:
-                warnings.append(
-                    f"Language mismatch: expected {language}, detected {detected}"
-                )
+                warnings.append(f"Language mismatch: expected {language}, detected {detected}")
 
     # References changes check
     if config.check_references_changes:
@@ -492,7 +486,7 @@ def validate_changelog(
 
 def generate_fallback_changelog(
     version: str,
-    changes: List[Change],
+    changes: list[Change],
     language: str = "en",
 ) -> str:
     """Generate a minimal fallback changelog when validation fails.

@@ -2,9 +2,7 @@
 
 import os
 import sys
-import tempfile
-import subprocess
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,14 +10,13 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from analyze import (
-    main,
     call_llm_with_retry,
     parse_extra_llm_params,
     sanitize_changelog,
 )
-from version import parse_version
 from parser import parse_response
-from prompt_builder import build_prompt, CommitInfo
+from prompt_builder import CommitInfo, build_prompt
+from version import parse_version
 
 
 class TestEndToEnd:
@@ -137,7 +134,7 @@ class TestEndToEnd:
             CommitInfo(hash="ghi9012", message="docs: update readme"),
         ]
 
-        prompt = build_prompt(commits, "v1.5.2")
+        build_prompt(commits, "v1.5.2")
 
         mock_response = """
 <BUMP>patch</BUMP>
@@ -298,10 +295,10 @@ class TestParseCommitsJson:
         """Test parsing basic commit list."""
         from analyze import parse_commits_json
 
-        json_str = '''[
+        json_str = """[
             {"hash": "abc1234", "message": "feat: add new feature"},
             {"hash": "def5678", "message": "fix: resolve bug"}
-        ]'''
+        ]"""
 
         commits = parse_commits_json(json_str)
 
@@ -314,10 +311,10 @@ class TestParseCommitsJson:
         """Test parsing commits with repo field."""
         from analyze import parse_commits_json
 
-        json_str = '''[
+        json_str = """[
             {"hash": "abc1234", "message": "feat: add login", "repo": "frontend"},
             {"hash": "def5678", "message": "fix: api error", "repo": "backend"}
-        ]'''
+        ]"""
 
         commits = parse_commits_json(json_str)
 
@@ -329,10 +326,10 @@ class TestParseCommitsJson:
         """Test breaking change detection in JSON commits."""
         from analyze import parse_commits_json
 
-        json_str = '''[
+        json_str = """[
             {"hash": "abc1234", "message": "feat!: breaking change here"},
             {"hash": "def5678", "message": "fix: normal fix"}
-        ]'''
+        ]"""
 
         commits = parse_commits_json(json_str)
 
@@ -372,9 +369,9 @@ class TestParseCommitsJson:
         """Test that commit messages are sanitized."""
         from analyze import parse_commits_json
 
-        json_str = '''[
+        json_str = """[
             {"hash": "abc1234", "message": "feat: add <script>bad</script> feature"}
-        ]'''
+        ]"""
 
         commits = parse_commits_json(json_str)
 
@@ -439,12 +436,8 @@ class TestCompletionKwargs:
 
     def test_thinking_modes_forwarded(self):
         for model in MODELS:
-            adaptive = _forwarded_kwargs(
-                model=model, temperature=None, max_tokens=4000, thinking="adaptive"
-            )
-            off = _forwarded_kwargs(
-                model=model, temperature=None, max_tokens=4000, thinking="off"
-            )
+            adaptive = _forwarded_kwargs(model=model, temperature=None, max_tokens=4000, thinking="adaptive")
+            off = _forwarded_kwargs(model=model, temperature=None, max_tokens=4000, thinking="off")
             assert adaptive["thinking"] == {"type": "adaptive"}, model
             assert off["thinking"] == {"type": "disabled"}, model
 
@@ -477,14 +470,10 @@ class TestBadRequestNotRetried:
     """A rejected parameter fails at once with the provider's message."""
 
     def test_400_raised_after_one_attempt(self):
-        mock_completion = MagicMock(
-            side_effect=Exception("400 `temperature` is deprecated for this model.")
-        )
+        mock_completion = MagicMock(side_effect=Exception("400 `temperature` is deprecated for this model."))
         with patch("analyze.litellm.completion", mock_completion):
             with pytest.raises(RuntimeError, match="temperature"):
-                call_llm_with_retry(
-                    model=MODELS[0], prompt="p", temperature=0.2, max_tokens=100, timeout=30
-                )
+                call_llm_with_retry(model=MODELS[0], prompt="p", temperature=0.2, max_tokens=100, timeout=30)
         assert mock_completion.call_count == 1
 
 
@@ -496,9 +485,7 @@ class TestParseExtraLLMParams:
         assert parse_extra_llm_params("   ") is None
 
     def test_object_parsed(self):
-        assert parse_extra_llm_params('{"reasoning_effort": "low"}') == {
-            "reasoning_effort": "low"
-        }
+        assert parse_extra_llm_params('{"reasoning_effort": "low"}') == {"reasoning_effort": "low"}
 
     def test_invalid_json_rejected(self):
         with pytest.raises(ValueError, match="Invalid JSON"):

@@ -1,22 +1,20 @@
 """Tests for map_reduce module."""
 
-import pytest
-import sys
 import os
-from unittest.mock import Mock, patch
+import sys
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from map_reduce import (
+    _extract_changes_from_response,
+    _parse_category,
+    _parse_change_line,
+    _parse_importance,
     determine_version_from_changes,
     extract_changes_from_chunk,
-    reduce_changes,
     process_large_input,
-    _extract_changes_from_response,
-    _parse_change_line,
-    _parse_category,
-    _parse_importance,
+    reduce_changes,
 )
 from models import Change, ChangeCategory, Importance
 
@@ -217,8 +215,7 @@ class TestReduceChanges:
 
     def test_many_changes_calls_llm(self):
         changes = [
-            Change(id=str(i), category=ChangeCategory.FEATURE, title=f"Feature {i}", description="")
-            for i in range(10)
+            Change(id=str(i), category=ChangeCategory.FEATURE, title=f"Feature {i}", description="") for i in range(10)
         ]
 
         mock_response = """<CHANGES>
@@ -246,6 +243,7 @@ class TestProcessLargeInput:
 
     def test_small_input_returns_empty(self):
         """Small input should return empty list (signal to use normal processing)."""
+
         def mock_llm_caller(prompt: str) -> str:
             raise AssertionError("Should not call LLM for small input")
 
@@ -263,10 +261,10 @@ class TestProcessLargeInput:
             call_count[0] += 1
             if "Extract ALL changes" in prompt:
                 # Map phase
-                return '<CHANGES>\n[feature|medium] Feature from chunk | desc\n</CHANGES>'
+                return "<CHANGES>\n[feature|medium] Feature from chunk | desc\n</CHANGES>"
             else:
                 # Reduce phase
-                return '<CHANGES>\n[feature|high] Final Feature | consolidated\n</CHANGES>'
+                return "<CHANGES>\n[feature|high] Final Feature | consolidated\n</CHANGES>"
 
         result = process_large_input(
             large_content,

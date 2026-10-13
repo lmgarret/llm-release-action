@@ -3,7 +3,6 @@
 import re
 import subprocess
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -13,7 +12,7 @@ class SemanticVersion:
     major: int
     minor: int
     patch: int
-    prerelease: Optional[str] = None
+    prerelease: str | None = None
 
     def __str__(self) -> str:
         """Return version string with v prefix."""
@@ -91,7 +90,7 @@ def parse_version(version_str: str) -> SemanticVersion:
     return SemanticVersion(major, minor, patch, prerelease)
 
 
-def detect_latest_tag() -> Optional[str]:
+def detect_latest_tag() -> str | None:
     """Detect the latest semver tag from git.
 
     Returns:

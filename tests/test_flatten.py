@@ -1,20 +1,17 @@
 """Tests for flatten module (Phase 0: Net State Analysis)."""
 
-import pytest
-import sys
 import os
+import sys
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from flatten import (
+    FLATTEN_PROMPT,
     flatten_changes,
     flatten_changes_to_list,
-    parse_flattened_response,
     parse_flattened_changes,
-    _parse_category,
-    _parse_importance,
-    FLATTEN_PROMPT,
+    parse_flattened_response,
 )
 from models import Change, ChangeCategory, Importance
 
@@ -142,7 +139,7 @@ class TestFlattenChanges:
 """
 
         input_content = "1. feat: Add feature\n2. fix: Fix bug"
-        result = flatten_changes(input_content, mock_llm)
+        flatten_changes(input_content, mock_llm)
 
         assert len(called_prompts) == 1
         assert input_content in called_prompts[0]

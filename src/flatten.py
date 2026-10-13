@@ -9,7 +9,7 @@ This ensures Phase 1 sees clean input for accurate version bump calculation.
 """
 
 import re
-from typing import Callable, List, Optional
+from collections.abc import Callable
 
 from models import Change, ChangeCategory, Importance
 from project_profile import get_breaking_definition
@@ -96,7 +96,7 @@ def _parse_importance(imp_str: str) -> Importance:
     return imp_map.get(imp_str.lower(), Importance.MEDIUM)
 
 
-def parse_flattened_changes(response: str) -> List[Change]:
+def parse_flattened_changes(response: str) -> list[Change]:
     """Parse flattened response into Change objects.
 
     Args:
@@ -134,18 +134,20 @@ def parse_flattened_changes(response: str) -> List[Change]:
         if not title:
             continue
 
-        changes.append(Change(
-            id=f"change-{i + 1}",
-            category=_parse_category(category_str),
-            title=title,
-            description=description,
-            importance=_parse_importance(importance_str),
-        ))
+        changes.append(
+            Change(
+                id=f"change-{i + 1}",
+                category=_parse_category(category_str),
+                title=title,
+                description=description,
+                importance=_parse_importance(importance_str),
+            )
+        )
 
     return changes
 
 
-def build_flatten_prompt(input_content: str, project_type: Optional[str] = None) -> str:
+def build_flatten_prompt(input_content: str, project_type: str | None = None) -> str:
     """Render the flatten prompt with the breaking definition for the project type."""
     definition = get_breaking_definition(project_type or "") or DEFAULT_BREAKING_DEFINITION
     return FLATTEN_PROMPT.format(
@@ -158,7 +160,7 @@ def build_flatten_prompt(input_content: str, project_type: Optional[str] = None)
 def flatten_changes(
     input_content: str,
     llm_caller: Callable[[str], str],
-    project_type: Optional[str] = None,
+    project_type: str | None = None,
 ) -> str:
     """Flatten input to net state using LLM.
 
@@ -184,8 +186,8 @@ def flatten_changes(
 def flatten_changes_to_list(
     input_content: str,
     llm_caller: Callable[[str], str],
-    project_type: Optional[str] = None,
-) -> List[Change]:
+    project_type: str | None = None,
+) -> list[Change]:
     """Flatten input to net state and return as Change objects.
 
     Convenience function that combines flatten_changes with parsing.

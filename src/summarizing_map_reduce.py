@@ -24,13 +24,12 @@ Architecture:
     Return summarized content
 """
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Callable, List, Optional
 
 from text_splitter import chunk_with_overlap
 from untrusted import UNTRUSTED_NOTICE, wrap
-
 
 # Default prompts for context summarization
 CONTEXT_MAP_PROMPT = """Extract the KEY FACTS from this project documentation that are relevant for:
@@ -71,11 +70,12 @@ Facts to consolidate:
 @dataclass
 class SummarizeResult:
     """Result of summarization."""
+
     content: str
     was_summarized: bool
     original_tokens: int
     final_tokens: int
-    warnings: List[str]
+    warnings: list[str]
 
 
 def estimate_tokens(text: str) -> int:
@@ -151,22 +151,18 @@ class SummarizingMapReduce:
         llm_caller: Callable[[str], str],
     ) -> str:
         """Summarize a single chunk (MAP phase)."""
-        prompt = self.map_prompt.format(
-            notice=UNTRUSTED_NOTICE, content=wrap(chunk, "project documentation")
-        )
+        prompt = self.map_prompt.format(notice=UNTRUSTED_NOTICE, content=wrap(chunk, "project documentation"))
         response = llm_caller(prompt)
         return self._extract_summary(response)
 
     def _reduce_summaries(
         self,
-        summaries: List[str],
+        summaries: list[str],
         llm_caller: Callable[[str], str],
     ) -> str:
         """Consolidate summaries (REDUCE phase)."""
         combined = "\n\n".join(summaries)
-        prompt = self.reduce_prompt.format(
-            notice=UNTRUSTED_NOTICE, summaries=wrap(combined, "extracted facts")
-        )
+        prompt = self.reduce_prompt.format(notice=UNTRUSTED_NOTICE, summaries=wrap(combined, "extracted facts"))
         response = llm_caller(prompt)
         return self._extract_summary(response)
 
@@ -190,7 +186,7 @@ class SummarizingMapReduce:
             SummarizeResult with content and metadata.
         """
         original_tokens = estimate_tokens(content)
-        warnings: List[str] = []
+        warnings: list[str] = []
 
         # Passthrough if content fits
         if fits_budget(content, max_tokens):
@@ -207,7 +203,7 @@ class SummarizingMapReduce:
 
         if len(chunks) <= 1:
             # Single chunk but still too large - just summarize directly
-            summary = self._summarize_chunk(content[:self.chunk_size * 2], llm_caller)
+            summary = self._summarize_chunk(content[: self.chunk_size * 2], llm_caller)
             final_tokens = estimate_tokens(summary)
 
             # If still too large, truncate
@@ -226,12 +222,11 @@ class SummarizingMapReduce:
             )
 
         # MAP phase: summarize each chunk in parallel
-        summaries: List[str] = []
+        summaries: list[str] = []
 
         with ThreadPoolExecutor(max_workers=min(len(chunks), self.max_workers)) as executor:
             future_to_idx = {
-                executor.submit(self._summarize_chunk, chunk, llm_caller): i
-                for i, chunk in enumerate(chunks)
+                executor.submit(self._summarize_chunk, chunk, llm_caller): i for i, chunk in enumerate(chunks)
             }
 
             # Collect results in order

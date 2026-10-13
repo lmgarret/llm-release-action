@@ -22,7 +22,7 @@ from changelog import (
     parse_metadata_response,
 )
 from config import AudienceConfig, ChangelogConfig
-from models import BreakingInfo, Change, ChangeCategory, Importance, ReleaseMetadata
+from models import BreakingInfo, Change, ChangeCategory
 
 
 class TestFilterChanges:
@@ -46,7 +46,9 @@ class TestFilterChanges:
         """Test filtering changes by excluded labels."""
         changes = [
             Change(id="1", category=ChangeCategory.FEATURE, title="Public feature", description="", labels=["public"]),
-            Change(id="2", category=ChangeCategory.FEATURE, title="Internal feature", description="", labels=["internal"]),
+            Change(
+                id="2", category=ChangeCategory.FEATURE, title="Internal feature", description="", labels=["internal"]
+            ),
         ]
 
         config = AudienceConfig(name="test", exclude_labels=["internal"])
@@ -766,7 +768,7 @@ class TestEmptyChangesHandling:
         changes_section = prompt[start:end].strip()
 
         # Should only have the header, no actual changes
-        lines = [l for l in changes_section.split("\n") if l.strip() and not l.startswith("##")]
+        lines = [ln for ln in changes_section.split("\n") if ln.strip() and not ln.startswith("##")]
         assert len(lines) == 0, f"Expected no changes, got: {lines}"
 
     def test_filtered_changes_all_excluded_by_sections(self) -> None:
@@ -788,6 +790,4 @@ class TestEmptyChangesHandling:
 
         # Both changes should be filtered out since their sections aren't included
         total_changes = sum(len(v) for v in changes_by_section.values())
-        assert total_changes == 0, (
-            "Changes with sections not in config should be filtered out"
-        )
+        assert total_changes == 0, "Changes with sections not in config should be filtered out"

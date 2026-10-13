@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -13,7 +13,6 @@ from presets import (
     VALID_TONES,
     get_preset,
 )
-
 
 # Default validation.max_length. A lower value is treated as a real length
 # budget and is enforced during generation, not only checked afterwards.
@@ -42,11 +41,11 @@ class AudienceConfig:
 
     # Base
     name: str
-    preset: Optional[str] = None
-    languages: List[str] = field(default_factory=lambda: ["en"])
+    preset: str | None = None
+    languages: list[str] = field(default_factory=lambda: ["en"])
 
     # Sections
-    sections: List[str] = field(
+    sections: list[str] = field(
         default_factory=lambda: [
             "breaking",
             "security",
@@ -70,11 +69,11 @@ class AudienceConfig:
     summary_only: bool = False
 
     # Filtering
-    exclude_categories: List[str] = field(default_factory=list)
-    exclude_patterns: List[str] = field(default_factory=list)
-    exclude_labels: List[str] = field(default_factory=list)
-    exclude_authors: List[str] = field(default_factory=list)
-    max_items_per_section: Optional[int] = None
+    exclude_categories: list[str] = field(default_factory=list)
+    exclude_patterns: list[str] = field(default_factory=list)
+    exclude_labels: list[str] = field(default_factory=list)
+    exclude_authors: list[str] = field(default_factory=list)
+    max_items_per_section: int | None = None
 
     # Style
     emojis: bool = False
@@ -100,13 +99,13 @@ class AudienceConfig:
 
     # Internal content detection
     skip_internal_check: bool = False  # Set True for developer/ops presets
-    internal_domain_patterns: List[str] = field(default_factory=list)  # Custom patterns
+    internal_domain_patterns: list[str] = field(default_factory=list)  # Custom patterns
 
     # Validation
     validation: ValidationConfig = field(default_factory=ValidationConfig)
 
     @classmethod
-    def from_dict(cls, name: str, data: Dict[str, Any]) -> "AudienceConfig":
+    def from_dict(cls, name: str, data: dict[str, Any]) -> "AudienceConfig":
         """Create an AudienceConfig from a dictionary, applying preset if specified."""
         # Start with preset defaults if specified
         if "preset" in data:
@@ -137,7 +136,7 @@ class AudienceConfig:
 class ChangelogConfig:
     """Root configuration containing all audience configs."""
 
-    audiences: Dict[str, AudienceConfig] = field(default_factory=dict)
+    audiences: dict[str, AudienceConfig] = field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, yaml_str: str) -> "ChangelogConfig":
@@ -175,7 +174,7 @@ class ChangelogConfig:
         return cls(audiences=audiences)
 
 
-def validate_audience_name(name: str) -> List[str]:
+def validate_audience_name(name: str) -> list[str]:
     """Validate audience name as safe identifier.
 
     Args:
@@ -201,7 +200,7 @@ def validate_audience_name(name: str) -> List[str]:
     return errors
 
 
-def validate_changelog_config(config: Dict[str, Any]) -> List[str]:
+def validate_changelog_config(config: dict[str, Any]) -> list[str]:
     """Validate changelog_config structure and values.
 
     Args:
@@ -235,9 +234,7 @@ def validate_changelog_config(config: Dict[str, Any]) -> List[str]:
         # Output format validation
         if output_format := settings.get("output_format"):
             if output_format not in VALID_OUTPUT_FORMATS:
-                errors.append(
-                    f"{audience}: Invalid output_format '{output_format}'. Valid: {VALID_OUTPUT_FORMATS}"
-                )
+                errors.append(f"{audience}: Invalid output_format '{output_format}'. Valid: {VALID_OUTPUT_FORMATS}")
 
         # Sections validation
         if sections := settings.get("sections"):
@@ -246,9 +243,7 @@ def validate_changelog_config(config: Dict[str, Any]) -> List[str]:
             else:
                 for section in sections:
                     if section not in VALID_SECTIONS:
-                        errors.append(
-                            f"{audience}: Unknown section '{section}'. Valid: {VALID_SECTIONS}"
-                        )
+                        errors.append(f"{audience}: Unknown section '{section}'. Valid: {VALID_SECTIONS}")
 
         # Languages validation is done separately in input_validation.py
         # to use langcodes library
@@ -267,9 +262,7 @@ def validate_changelog_config(config: Dict[str, Any]) -> List[str]:
             if isinstance(validation, dict):
                 if on_failure := validation.get("on_failure"):
                     if on_failure not in valid_on_failure:
-                        errors.append(
-                            f"{audience}: Invalid on_failure '{on_failure}'. Valid: {valid_on_failure}"
-                        )
+                        errors.append(f"{audience}: Invalid on_failure '{on_failure}'. Valid: {valid_on_failure}")
                 if "max_length" in validation:
                     max_length = validation["max_length"]
                     if not isinstance(max_length, int) or isinstance(max_length, bool) or max_length < 1:
@@ -288,16 +281,12 @@ def validate_changelog_config(config: Dict[str, Any]) -> List[str]:
 
                 for i, pattern in enumerate(patterns):
                     if not isinstance(pattern, str):
-                        errors.append(
-                            f"{audience}: internal_domain_patterns[{i}] must be a string"
-                        )
+                        errors.append(f"{audience}: internal_domain_patterns[{i}] must be a string")
                     else:
                         try:
                             re.compile(pattern)
                         except re.error as e:
-                            errors.append(
-                                f"{audience}: internal_domain_patterns[{i}] is not a valid regex: {e}"
-                            )
+                            errors.append(f"{audience}: internal_domain_patterns[{i}] is not a valid regex: {e}")
 
         # skip_internal_check validation
         if skip_check := settings.get("skip_internal_check"):

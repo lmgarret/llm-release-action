@@ -1,24 +1,25 @@
 """Tests for analyzer.py module (XML delimiter parsing)."""
 
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from analyzer import (
+    _calculate_title_similarity,
+    _word_tokenize,
     extract_tag_content,
+    group_related_changes,
     parse_breaking_change,
     parse_change_line,
     parse_changes_section,
     parse_phase1_response,
     validate_bump,
-    group_related_changes,
-    _word_tokenize,
-    _calculate_title_similarity,
 )
-from models import ChangeCategory, Importance, Change, BreakingInfo
+from models import Change, ChangeCategory, Importance
 
 
 class TestValidateBump:
@@ -390,9 +391,7 @@ class TestCalculateTitleSimilarity:
 
     def test_partial_overlap(self):
         """Test titles with partial overlap."""
-        similarity = _calculate_title_similarity(
-            "Add dark mode toggle", "Add light mode toggle"
-        )
+        similarity = _calculate_title_similarity("Add dark mode toggle", "Add light mode toggle")
         assert 0.3 < similarity < 0.8  # Some overlap
 
     def test_empty_title(self):

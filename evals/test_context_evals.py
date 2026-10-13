@@ -8,16 +8,16 @@ Run with: PYTHONPATH=src pytest evals/test_context_evals.py -v -m eval
 Requires AWS credentials configured for Bedrock access.
 """
 
-import pytest
 import litellm
+import pytest
+from conftest import completion_kwargs, get_eval_model, get_test_model
 from deepeval import assert_test
-from deepeval.test_case import LLMTestCase, SingleTurnParams
 from deepeval.metrics import GEval
 from deepeval.models import DeepEvalBaseLLM
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 
-from prompt_builder import build_semantic_analysis_prompt, CommitInfo
 from analyzer import parse_phase1_response
-from conftest import get_test_model, get_eval_model, completion_kwargs
+from prompt_builder import CommitInfo, build_semantic_analysis_prompt
 
 pytestmark = [
     pytest.mark.eval,
@@ -145,6 +145,7 @@ BREAKING_ACTION_COMMITS = [
 # =============================================================================
 # Context Files Evals
 # =============================================================================
+
 
 class TestContextImprovesAccuracy:
     """Test that providing context improves version bump accuracy."""
@@ -344,11 +345,12 @@ class TestContextVsNoContext:
         result_with_context = parse_phase1_response(response_with_context)
 
         # With context should definitely be patch
-        assert result_with_context.bump == "patch", \
+        assert result_with_context.bump == "patch", (
             f"With context, internal refactor should be patch, got {result_with_context.bump}"
+        )
 
         # Log comparison for analysis
-        print(f"\n=== Internal Refactor Comparison ===")
+        print("\n=== Internal Refactor Comparison ===")
         print(f"Without context: {result_no_context.bump}")
         print(f"With context: {result_with_context.bump}")
 
@@ -369,8 +371,7 @@ class TestContextVsNoContext:
 
         # Minimal context says "Everything else is internal implementation"
         # So internal module changes should still be PATCH
-        assert result.bump == "patch", \
-            f"With minimal context, internal changes should be patch, got {result.bump}"
+        assert result.bump == "patch", f"With minimal context, internal changes should be patch, got {result.bump}"
 
 
 class TestRealWorldScenarios:
@@ -395,8 +396,7 @@ class TestRealWorldScenarios:
         response = call_llm(prompt)
         result = parse_phase1_response(response)
 
-        assert result.bump == "minor", \
-            f"Adding new feature (context_files) should be minor, got {result.bump}"
+        assert result.bump == "minor", f"Adding new feature (context_files) should be minor, got {result.bump}"
 
     def test_fixing_dry_run_summarization(self):
         """Fixing dry_run to allow summarization should be PATCH."""
@@ -414,8 +414,7 @@ class TestRealWorldScenarios:
         response = call_llm(prompt)
         result = parse_phase1_response(response)
 
-        assert result.bump == "patch", \
-            f"Bug fix and test additions should be patch, got {result.bump}"
+        assert result.bump == "patch", f"Bug fix and test additions should be patch, got {result.bump}"
 
     def test_refactoring_prompts_is_internal(self):
         """Refactoring prompt templates should be PATCH (internal)."""
@@ -435,5 +434,4 @@ class TestRealWorldScenarios:
         result = parse_phase1_response(response)
 
         # Context says prompts.py classes are internal
-        assert result.bump == "patch", \
-            f"Prompt template refactoring (internal) should be patch, got {result.bump}"
+        assert result.bump == "patch", f"Prompt template refactoring (internal) should be patch, got {result.bump}"

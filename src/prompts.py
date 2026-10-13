@@ -10,13 +10,11 @@ Key features:
 - Audience-specific Phase 2 prompts for transformation
 """
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
 
-from jinja2 import Environment, BaseLoader
+from jinja2 import BaseLoader, Environment
 
 from untrusted import UNTRUSTED_NOTICE, code_fence, neutralize_tags, normalize, wrap
-
 
 # Create Jinja2 environment with no file loading (templates are inline)
 _env = Environment(
@@ -27,7 +25,7 @@ _env = Environment(
 )
 
 # Thresholds for adaptive detail level
-DETAIL_THRESHOLD_FULL = 30      # <= this: full detail on everything
+DETAIL_THRESHOLD_FULL = 30  # <= this: full detail on everything
 DETAIL_THRESHOLD_MODERATE = 100  # <= this: detail on important, summarize rest
 
 
@@ -52,7 +50,8 @@ def get_detail_level(commit_count: int) -> str:
 # Phase 1: Semantic Analysis Prompt
 # =============================================================================
 
-PHASE1_TEMPLATE = _env.from_string("""
+PHASE1_TEMPLATE = _env.from_string(
+    """
 You are a semantic versioning expert analyzing changes for a software release.
 
 ## Task
@@ -224,14 +223,16 @@ Keep concise - summarize minor changes, detail only significant ones.
 {% if detect_breaking %}
 4. Breaking changes MUST include migration steps
 {% endif %}
-""".strip())
+""".strip()
+)
 
 
 # =============================================================================
 # Phase 2: Changelog Transformation Prompt
 # =============================================================================
 
-PHASE2_TEMPLATE = _env.from_string("""
+PHASE2_TEMPLATE = _env.from_string(
+    """
 You are transforming a changelog for a specific audience.
 
 ## Task
@@ -385,12 +386,14 @@ FORMAT RULES:
 4. Limit to {{ max_items }} most important items per section
 {% endif %}
 5. MANDATORY: Each bullet point MUST be a SINGLE line. NO multi-line entries. NO "Description:" labels. Format: `- Title: One sentence description`
-""".strip())
+""".strip()
+)
 
 
 # =============================================================================
 # Template Rendering Functions
 # =============================================================================
+
 
 @dataclass
 class Phase1Config:
@@ -399,16 +402,16 @@ class Phase1Config:
     base_version: str
     input_content: str
     commit_count: int  # Used for adaptive detail level
-    diff_content: Optional[str] = None
-    diff_analysis_content: Optional[str] = None  # Structured diff analysis (preferred over raw diff)
+    diff_content: str | None = None
+    diff_analysis_content: str | None = None  # Structured diff analysis (preferred over raw diff)
     detect_breaking: bool = True
     generate_changelog: bool = True
     include_commits: bool = True
     next_version_placeholder: str = "vX.Y.Z"
-    context_content: Optional[str] = None  # Project context from context files
+    context_content: str | None = None  # Project context from context files
     project_type: str = "generic"  # Project type from project profiling
     project_consumers: str = ""  # Who consumes the project's releases
-    breaking_rules: Optional[str] = None  # Type-specific breaking rules (None = generic rules)
+    breaking_rules: str | None = None  # Type-specific breaking rules (None = generic rules)
 
 
 @dataclass
@@ -429,11 +432,11 @@ class Phase2Config:
     summary_only: bool = False
     include_breaking: bool = True
     has_breaking_changes: bool = False
-    max_items: Optional[int] = None
+    max_items: int | None = None
 
 
 # Language name lookup
-LANGUAGE_NAMES: Dict[str, str] = {
+LANGUAGE_NAMES: dict[str, str] = {
     "en": "English",
     "es": "Spanish",
     "fr": "French",
@@ -551,7 +554,7 @@ def render_phase2_prompt(config: Phase2Config) -> str:
 # =============================================================================
 
 # File type mappings for semantic extraction hints
-FILE_TYPE_HINTS: Dict[str, str] = {
+FILE_TYPE_HINTS: dict[str, str] = {
     "openapi": "Extract endpoint changes: added/removed/modified paths, methods, parameters, response schemas",
     "sql": "Extract schema changes: tables, columns, indexes, constraints, migrations",
     "proto": "Extract service/message changes: services, methods, message types, fields",
@@ -559,7 +562,8 @@ FILE_TYPE_HINTS: Dict[str, str] = {
     "code": "Extract API changes: functions, classes, methods, exports, public interfaces",
 }
 
-DIFF_MAP_TEMPLATE = _env.from_string("""
+DIFF_MAP_TEMPLATE = _env.from_string(
+    """
 Extract semantic changes from this file diff.
 
 {{ untrusted_notice }}
@@ -592,7 +596,8 @@ Rules:
 {% if is_binary %}
 - This is a binary file - just note "binary file changed"
 {% endif %}
-""".strip())
+""".strip()
+)
 
 
 @dataclass
@@ -601,9 +606,9 @@ class DiffMapConfig:
 
     file_path: str
     diff_content: str
-    file_type: Optional[str] = None  # Inferred from extension if not provided
+    file_type: str | None = None  # Inferred from extension if not provided
 
-    def get_file_type(self) -> Optional[str]:
+    def get_file_type(self) -> str | None:
         """Infer file type from extension if not explicitly set.
 
         Returns:
@@ -615,10 +620,7 @@ class DiffMapConfig:
         path_lower = self.file_path.lower()
 
         # OpenAPI specs
-        if any(
-            x in path_lower
-            for x in ["openapi", "swagger", "api.yaml", "api.yml", "api.json"]
-        ):
+        if any(x in path_lower for x in ["openapi", "swagger", "api.yaml", "api.yml", "api.json"]):
             return "openapi"
 
         # SQL migrations

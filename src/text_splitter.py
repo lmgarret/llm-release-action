@@ -8,12 +8,10 @@ Source: https://github.com/langchain-ai/langchain/blob/master/libs/langchain/lan
 
 import logging
 import re
-from typing import Callable, Iterable, List, Optional
+from collections.abc import Callable, Iterable
 
 
-def _split_text_with_regex(
-    text: str, separator: str, keep_separator: bool
-) -> List[str]:
+def _split_text_with_regex(text: str, separator: str, keep_separator: bool) -> list[str]:
     """Split text using regex, optionally keeping the separator."""
     if separator:
         if keep_separator:
@@ -39,10 +37,10 @@ class RecursiveCharacterTextSplitter:
 
     def __init__(
         self,
-        separators: Optional[List[str]] = None,
+        separators: list[str] | None = None,
         keep_separator: bool = True,
         is_separator_regex: bool = False,
-        length_function: Optional[Callable[[str], int]] = len,
+        length_function: Callable[[str], int] | None = len,
         strip_whitespace: bool = True,
         chunk_size: int = 4000,
         chunk_overlap: int = 200,
@@ -67,7 +65,7 @@ class RecursiveCharacterTextSplitter:
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
 
-    def _join_docs(self, docs: List[str], separator: str) -> Optional[str]:
+    def _join_docs(self, docs: list[str], separator: str) -> str | None:
         text = separator.join(docs)
         if self._strip_whitespace:
             text = text.strip()
@@ -75,23 +73,19 @@ class RecursiveCharacterTextSplitter:
             return None
         return text
 
-    def _merge_splits(self, splits: Iterable[str], separator: str) -> List[str]:
+    def _merge_splits(self, splits: Iterable[str], separator: str) -> list[str]:
         """Merge smaller splits into chunks of appropriate size."""
         separator_len = self._length_function(separator)
 
         docs = []
-        current_doc: List[str] = []
+        current_doc: list[str] = []
         total = 0
         for d in splits:
             _len = self._length_function(d)
-            if (
-                total + _len + (separator_len if len(current_doc) > 0 else 0)
-                > self._chunk_size
-            ):
+            if total + _len + (separator_len if len(current_doc) > 0 else 0) > self._chunk_size:
                 if total > self._chunk_size:
                     logging.warning(
-                        f"Created a chunk of size {total}, "
-                        f"which is longer than the specified {self._chunk_size}"
+                        f"Created a chunk of size {total}, which is longer than the specified {self._chunk_size}"
                     )
                 if len(current_doc) > 0:
                     doc = self._join_docs(current_doc, separator)
@@ -101,13 +95,9 @@ class RecursiveCharacterTextSplitter:
                     # - we have a larger chunk than in the chunk overlap
                     # - or if we still have any chunks and the length is long
                     while total > self._chunk_overlap or (
-                        total + _len + (separator_len if len(current_doc) > 0 else 0)
-                        > self._chunk_size
-                        and total > 0
+                        total + _len + (separator_len if len(current_doc) > 0 else 0) > self._chunk_size and total > 0
                     ):
-                        total -= self._length_function(current_doc[0]) + (
-                            separator_len if len(current_doc) > 1 else 0
-                        )
+                        total -= self._length_function(current_doc[0]) + (separator_len if len(current_doc) > 1 else 0)
                         current_doc = current_doc[1:]
             current_doc.append(d)
             total += _len + (separator_len if len(current_doc) > 1 else 0)
@@ -116,7 +106,7 @@ class RecursiveCharacterTextSplitter:
             docs.append(doc)
         return docs
 
-    def _split_text(self, text: str, separators: List[str]) -> List[str]:
+    def _split_text(self, text: str, separators: list[str]) -> list[str]:
         """Split incoming text and return chunks."""
         final_chunks = []
         # Get appropriate separator to use
@@ -156,7 +146,7 @@ class RecursiveCharacterTextSplitter:
             final_chunks.extend(merged_text)
         return final_chunks
 
-    def split_text(self, text: str) -> List[str]:
+    def split_text(self, text: str) -> list[str]:
         """Split text into chunks.
 
         Args:
@@ -172,7 +162,7 @@ def chunk_with_overlap(
     content: str,
     chunk_size: int = 2000,
     overlap: int = 200,
-) -> List[str]:
+) -> list[str]:
     """Split content into overlapping chunks.
 
     Uses RecursiveCharacterTextSplitter to split on natural boundaries

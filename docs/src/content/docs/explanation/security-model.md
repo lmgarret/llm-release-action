@@ -34,8 +34,9 @@ or dependency would run there too.
   bump it: `uses: lmgarret/llm-release-action@<sha> # v1.2.0`. Tags like `@v1` move
   with every release.
 - Every Python dependency, transitive ones included, is pinned to an exact version with
-  hashes and installed with `pip install --require-hashes`, so a new or tampered upstream
-  release can't slip in.
+  hashes in `uv.lock`, and uv checks those hashes on install, so a new or tampered
+  upstream release can't slip in. uv itself is installed with `pip install --require-hashes`,
+  and the action uses no third-party actions.
 - Release tags (`vX.Y.Z`) and their releases are immutable.
 
 ## Prompt injection defense

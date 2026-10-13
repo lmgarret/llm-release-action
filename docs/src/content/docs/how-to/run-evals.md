@@ -7,11 +7,14 @@ sidebar:
 
 The repository has a [DeepEval](https://github.com/confident-ai/deepeval) suite that
 checks LLM output quality. It calls a real model, so it needs credentials (Bedrock by default).
+Dependencies are managed with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-pip install -r evals/requirements.txt
-PYTHONPATH=src pytest evals/ -v -m eval
+uv run --with deepeval pytest evals/ -v -m eval
 ```
+
+DeepEval isn't in `uv.lock`: it holds back some of the action's own dependencies, so it is
+added on top for the run only.
 
 It covers:
 
@@ -24,6 +27,11 @@ It covers:
 Unit tests don't need credentials:
 
 ```bash
-pip install -r src/requirements.txt -r tests/requirements.txt
-PYTHONPATH=src pytest tests/
+uv run pytest tests/
+```
+
+Lint and format with Ruff before pushing:
+
+```bash
+uv run ruff check --fix . && uv run ruff format .
 ```

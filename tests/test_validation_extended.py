@@ -1,8 +1,7 @@
 """Extended tests for validation module - empty sections and internal content."""
 
-import pytest
-import sys
 import os
+import sys
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -11,7 +10,6 @@ from validation import (
     check_empty_sections,
     check_internal_content,
     strip_empty_sections,
-    INTERNAL_CONTENT_PATTERNS,
 )
 
 
@@ -455,7 +453,7 @@ Added new columns and indices to the process table.
 """
         # These sections have text (even if vague), so they're not structurally empty
         # The real issue is the internal content leak
-        empty_issues = check_empty_sections(problematic_content)
+        check_empty_sections(problematic_content)
         # Sections have some text, so may or may not be detected as empty depending on implementation
 
         # Check for internal content - this is the key quality issue

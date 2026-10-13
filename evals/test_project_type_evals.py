@@ -7,9 +7,9 @@ Requires AWS credentials configured for Bedrock access.
 
 import litellm
 import pytest
+from conftest import completion_kwargs, get_test_model
 
 from analyzer import parse_phase1_response
-from conftest import completion_kwargs, get_test_model
 from project_profile import ProjectProfile, build_profile_prompt, parse_profile_response
 from prompt_builder import CommitInfo, build_semantic_analysis_prompt
 
@@ -36,7 +36,16 @@ DETECTION_CASES = [
     (
         "app",
         "# Pocket Notes\n\nA private, offline note-taking app for Android. Available on F-Droid and Google Play.",
-        ["README.md", "app/build.gradle.kts", "app/src/", "build.gradle.kts", "fastlane/metadata/", "gradle/", "gradlew", "settings.gradle.kts"],
+        [
+            "README.md",
+            "app/build.gradle.kts",
+            "app/src/",
+            "build.gradle.kts",
+            "fastlane/metadata/",
+            "gradle/",
+            "gradlew",
+            "settings.gradle.kts",
+        ],
     ),
     (
         "library",

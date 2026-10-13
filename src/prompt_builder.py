@@ -7,7 +7,6 @@ Jinja2 templates from the prompts module for flexible, conditional prompts.
 import re
 import subprocess
 from dataclasses import dataclass
-from typing import List, Optional
 
 from content_scanner import sanitize_content
 from project_profile import ProjectProfile, get_breaking_rules
@@ -99,7 +98,7 @@ def ref_exists(ref: str) -> bool:
     return result.returncode == 0
 
 
-def get_commits(base_ref: str, head_ref: str = "HEAD") -> List[CommitInfo]:
+def get_commits(base_ref: str, head_ref: str = "HEAD") -> list[CommitInfo]:
     """Get commits between two refs.
 
     `base_ref` doubles as the semver baseline elsewhere, and on a repository's
@@ -169,7 +168,7 @@ def get_commits(base_ref: str, head_ref: str = "HEAD") -> List[CommitInfo]:
     return commits
 
 
-def get_file_diff(base_ref: str, head_ref: str, patterns: List[str], max_lines: int = 100) -> str:
+def get_file_diff(base_ref: str, head_ref: str, patterns: list[str], max_lines: int = 100) -> str:
     """Get diff for specific file patterns.
 
     Args:
@@ -202,7 +201,7 @@ def get_file_diff(base_ref: str, head_ref: str, patterns: List[str], max_lines: 
     return "\n".join(lines)
 
 
-def summarize_commits_by_type(commits: List[CommitInfo]) -> str:
+def summarize_commits_by_type(commits: list[CommitInfo]) -> str:
     """Summarize commits by type.
 
     Args:
@@ -221,10 +220,10 @@ def summarize_commits_by_type(commits: List[CommitInfo]) -> str:
 
 
 def build_prompt(
-    commits: List[CommitInfo],
+    commits: list[CommitInfo],
     base_version: str,
     max_commits: int = 50,
-    diff_patterns: Optional[List[str]] = None,
+    diff_patterns: list[str] | None = None,
     base_ref: str = "",
     head_ref: str = "HEAD",
 ) -> str:
@@ -326,19 +325,19 @@ You MUST respond with these XML tags:
 
 
 def build_semantic_analysis_prompt(
-    commits: List[CommitInfo],
+    commits: list[CommitInfo],
     base_version: str,
-    content_override: Optional[str] = None,
+    content_override: str | None = None,
     max_commits: int = 50,
-    diff_patterns: Optional[List[str]] = None,
+    diff_patterns: list[str] | None = None,
     base_ref: str = "",
     head_ref: str = "HEAD",
     detect_breaking: bool = True,
     generate_changelog: bool = True,
     include_commits: bool = True,
-    context_content: Optional[str] = None,
-    diff_analysis_content: Optional[str] = None,
-    project_profile: Optional[ProjectProfile] = None,
+    context_content: str | None = None,
+    diff_analysis_content: str | None = None,
+    project_profile: ProjectProfile | None = None,
 ) -> str:
     """Build prompt for semantic analysis of changes using Jinja2 templates.
 
@@ -402,8 +401,8 @@ def build_semantic_analysis_prompt(
 
     # Build optional diff section
     # Prefer structured diff analysis over raw diff when provided
-    diff_content: Optional[str] = None
-    structured_diff_analysis: Optional[str] = None
+    diff_content: str | None = None
+    structured_diff_analysis: str | None = None
 
     if diff_analysis_content:
         # Use pre-processed structured diff analysis

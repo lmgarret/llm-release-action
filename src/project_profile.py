@@ -17,8 +17,8 @@ Project types:
 import os
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
 
 from untrusted import UNTRUSTED_NOTICE, wrap
 
@@ -46,7 +46,7 @@ class ProjectProfile:
 
 # Breaking-change rules per project type. "generic" falls back to the
 # type-agnostic rules in the Phase 1 template.
-BREAKING_RULES: Dict[str, str] = {
+BREAKING_RULES: dict[str, str] = {
     "library": """Consumers are developers who install this project and call it from their own code or scripts.
 
 BREAKING (MAJOR) - a consumer must change their code, scripts or configuration:
@@ -100,7 +100,7 @@ NOT breaking - use PATCH or MINOR:
 }
 
 # One-line definitions for the flatten prompt
-BREAKING_DEFINITIONS: Dict[str, str] = {
+BREAKING_DEFINITIONS: dict[str, str] = {
     "library": "BREAKING = developers using this library must change their code, scripts or config",
     "api": "BREAKING = existing API clients must change their requests or response handling",
     "service": "BREAKING = operators must take manual action when upgrading",
@@ -132,7 +132,7 @@ Respond with exactly these tags:
 <REASON>One short sentence: the evidence for this classification</REASON>"""
 
 
-def list_repo_files(root_dir: str = ".") -> List[str]:
+def list_repo_files(root_dir: str = ".") -> list[str]:
     """List tracked files, falling back to a filesystem walk outside git."""
     try:
         result = subprocess.run(
@@ -156,7 +156,7 @@ def list_repo_files(root_dir: str = ".") -> List[str]:
     return files
 
 
-def build_file_tree(files: List[str], depth: int = TREE_DEPTH, max_entries: int = TREE_MAX_ENTRIES) -> List[str]:
+def build_file_tree(files: list[str], depth: int = TREE_DEPTH, max_entries: int = TREE_MAX_ENTRIES) -> list[str]:
     """Collapse a file list into a shallow tree listing.
 
     Paths deeper than `depth` are shown as their directory at that depth
@@ -207,7 +207,7 @@ def load_readme(root_dir: str = ".", max_chars: int = README_MAX_CHARS) -> str:
     return _read(root_dir, candidates[0], max_chars) if candidates else ""
 
 
-def build_profile_prompt(readme: str, tree: List[str]) -> str:
+def build_profile_prompt(readme: str, tree: list[str]) -> str:
     """Build the project classification prompt."""
     return PROFILE_PROMPT.format(
         notice=UNTRUSTED_NOTICE,
@@ -276,11 +276,11 @@ def resolve_project_profile(
     return parse_profile_response(llm_caller(build_profile_prompt(readme, tree)))
 
 
-def get_breaking_rules(project_type: str) -> Optional[str]:
+def get_breaking_rules(project_type: str) -> str | None:
     """Breaking-change rules for a project type, or None for generic."""
     return BREAKING_RULES.get(project_type)
 
 
-def get_breaking_definition(project_type: str) -> Optional[str]:
+def get_breaking_definition(project_type: str) -> str | None:
     """One-line breaking-change definition for the flatten prompt, or None for generic."""
     return BREAKING_DEFINITIONS.get(project_type)

@@ -72,9 +72,7 @@ class TestSetOutput:
 class TestWriteChangelogFiles:
     def test_writes_one_file_per_audience_and_language(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
-        config = ChangelogConfig.from_yaml(
-            "web:\n  preset: customer\n  output_format: html\n  languages: [en, es]\n"
-        )
+        config = ChangelogConfig.from_yaml("web:\n  preset: customer\n  output_format: html\n  languages: [en, es]\n")
         changelogs = {"web": {"en": "<p>hi</p>", "es": "<p>hola</p>"}, "default": {"en": "it's"}}
 
         paths = write_changelog_files(changelogs, config)

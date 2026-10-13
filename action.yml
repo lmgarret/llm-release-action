@@ -155,14 +155,23 @@ runs:
   using: 'composite'
   steps:
     - name: Set up Python
+      id: python
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: '3.11'
 
+    # uv is installed with pip so that the action only depends on GitHub-owned actions.
+    # uv then checks every package against the hashes in uv.lock, and --frozen fails
+    # instead of re-resolving if the lock is stale.
     - name: Install dependencies
       shell: bash
+      env:
+        UV_PROJECT: ${{ github.action_path }}
+        UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/llm-release-action-venv
+        UV_PYTHON: ${{ steps.python.outputs.python-path }}
       run: |
-        pip install --require-hashes -r "${{ github.action_path }}/src/requirements.txt"
+        pip install --quiet --require-hashes -r "$GITHUB_ACTION_PATH/.github/uv-requirements.txt"
+        uv sync --frozen --no-default-groups
 
     - name: Run analysis
       id: analyze
@@ -194,5 +203,7 @@ runs:
         INPUT_DIFF_EXCLUDE_PATTERNS: ${{ inputs.diff_exclude_patterns }}
         INPUT_DIFF_MAX_FILES: ${{ inputs.diff_max_files }}
         INPUT_DIFF_MAX_TOTAL_LINES: ${{ inputs.diff_max_total_lines }}
-      run: |
-        python ${{ github.action_path }}/src/analyze.py
+        UV_PROJECT: ${{ github.action_path }}
+        UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/llm-release-action-venv
+        UV_PYTHON: ${{ steps.python.outputs.python-path }}
+      run: uv run --no-sync python "$GITHUB_ACTION_PATH/src/analyze.py"

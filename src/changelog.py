@@ -14,34 +14,29 @@ in prompts to prevent prompt injection attacks.
 
 import logging
 import re
-from typing import Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
 
 import regex
 
 from config import DEFAULT_MAX_LENGTH, AudienceConfig, ChangelogConfig
 from content_scanner import sanitize_content
-from untrusted import UNTRUSTED_NOTICE, wrap
+from i18n import (
+    TONE_DESCRIPTIONS,
+)
 from input_validation import (
     PatternCompilationError,
     safe_compile_pattern,
 )
+from models import Change, ReleaseMetadata
+from repo_url import get_commit_url, get_issue_url, get_pr_url
+from templates import CATEGORY_TO_SECTION, format_section_header
+from untrusted import UNTRUSTED_NOTICE, wrap
 
 logger = logging.getLogger(__name__)
 
-from i18n import (
-    SECTION_NAMES as I18N_SECTION_NAMES,
-    TONE_DESCRIPTIONS,
-    get_language_instruction,
-    get_section_icon,
-    get_section_name,
-    get_tone_description,
-)
-from models import Change, ChangeCategory, ReleaseMetadata
-from repo_url import get_commit_url, get_issue_url, get_pr_url
-from templates import CATEGORY_TO_SECTION, format_section_header
 
 # Audience persona prompts - put the LLM "in the shoes" of the reader
-AUDIENCE_PERSONAS: Dict[str, str] = {
+AUDIENCE_PERSONAS: dict[str, str] = {
     "customer": """You are writing a changelog for CUSTOMERS - the end users of this product.
 
 PUT YOURSELF IN THEIR SHOES:
@@ -73,7 +68,6 @@ HOW TO FORMAT:
 - Use specific names: "Added Workday GetEmployee operation" not "Added new operations"
 - Be concise but specific: one line per item with a brief description
 - Group by category: 🚀 New Features, 🔧 Fixes & Improvements, 🐛 Bug Fixes""",
-
     "developer": """You are writing a changelog for DEVELOPERS - engineers who build on this platform.
 
 PUT YOURSELF IN THEIR SHOES:
@@ -99,7 +93,6 @@ HOW TO COMMUNICATE:
 - Include code snippets when useful
 - Reference specific methods, parameters, endpoints
 - Provide before/after examples for breaking changes""",
-
     "executive": """You are writing a changelog for EXECUTIVES - business leaders making strategic decisions.
 
 PUT YOURSELF IN THEIR SHOES:
@@ -125,7 +118,6 @@ HOW TO COMMUNICATE:
 - Quantify when possible: "50% faster", "supports 10x more users"
 - Be extremely concise - bullet points, not paragraphs
 - Frame everything in business terms""",
-
     "marketing": """You are writing a changelog for MARKETING - teams creating promotional content.
 
 PUT YOURSELF IN THEIR SHOES:
@@ -151,7 +143,6 @@ HOW TO COMMUNICATE:
 - Focus on benefits and outcomes
 - Make features sound compelling
 - Suggest angles and talking points""",
-
     "security": """You are writing a changelog for SECURITY TEAMS - people assessing risk and compliance.
 
 PUT YOURSELF IN THEIR SHOES:
@@ -177,7 +168,6 @@ HOW TO COMMUNICATE:
 - Use security terminology correctly
 - Note if any action is required
 - Reference relevant standards/compliance""",
-
     "ops": """You are writing a changelog for OPS TEAMS - people deploying and maintaining the system.
 
 PUT YOURSELF IN THEIR SHOES:
@@ -207,7 +197,7 @@ HOW TO COMMUNICATE:
 }
 
 # Section display names (used for prompt building)
-SECTION_NAMES: Dict[str, str] = {
+SECTION_NAMES: dict[str, str] = {
     "breaking": "Breaking Changes",
     "security": "Security",
     "features": "New Features",
@@ -221,7 +211,7 @@ SECTION_NAMES: Dict[str, str] = {
 }
 
 
-def filter_changes(changes: List[Change], config: AudienceConfig) -> List[Change]:
+def filter_changes(changes: list[Change], config: AudienceConfig) -> list[Change]:
     """Filter changes based on audience configuration.
 
     Applies:
@@ -244,7 +234,7 @@ def filter_changes(changes: List[Change], config: AudienceConfig) -> List[Change
     filtered = []
 
     # Compile exclude patterns once with safe compilation (ReDoS protection)
-    compiled_patterns: List[regex.Pattern] = []
+    compiled_patterns: list[regex.Pattern] = []
     for pattern in config.exclude_patterns:
         try:
             # Use safe_compile_pattern for timeout and ReDoS safety validation
@@ -260,15 +250,11 @@ def filter_changes(changes: List[Change], config: AudienceConfig) -> List[Change
             continue
 
         # Check label exclusion
-        if config.exclude_labels and any(
-            label in config.exclude_labels for label in change.labels
-        ):
+        if config.exclude_labels and any(label in config.exclude_labels for label in change.labels):
             continue
 
         # Check author exclusion
-        if config.exclude_authors and any(
-            author in config.exclude_authors for author in change.authors
-        ):
+        if config.exclude_authors and any(author in config.exclude_authors for author in change.authors):
             continue
 
         # Check pattern exclusion (match against title and description)
@@ -299,9 +285,7 @@ def filter_changes(changes: List[Change], config: AudienceConfig) -> List[Change
     return filtered
 
 
-def _apply_max_items_per_section(
-    changes: List[Change], sections: List[str], max_items: int
-) -> List[Change]:
+def _apply_max_items_per_section(changes: list[Change], sections: list[str], max_items: int) -> list[Change]:
     """Apply max items per section limit.
 
     Args:
@@ -313,7 +297,7 @@ def _apply_max_items_per_section(
         Changes with per-section limits applied
     """
     # Group by section
-    by_section: Dict[str, List[Change]] = {}
+    by_section: dict[str, list[Change]] = {}
     for change in changes:
         section = CATEGORY_TO_SECTION.get(change.category, "other")
         if section not in by_section:
@@ -329,7 +313,7 @@ def _apply_max_items_per_section(
     return result
 
 
-def get_changes_by_section(changes: List[Change], sections: List[str]) -> Dict[str, List[Change]]:
+def get_changes_by_section(changes: list[Change], sections: list[str]) -> dict[str, list[Change]]:
     """Group changes by section in the specified order.
 
     Args:
@@ -339,7 +323,7 @@ def get_changes_by_section(changes: List[Change], sections: List[str]) -> Dict[s
     Returns:
         Dictionary mapping section names to lists of changes
     """
-    result: Dict[str, List[Change]] = {}
+    result: dict[str, list[Change]] = {}
 
     # Initialize sections in order
     for section in sections:
@@ -356,9 +340,9 @@ def get_changes_by_section(changes: List[Change], sections: List[str]) -> Dict[s
 
 def format_changelog_section(
     section: str,
-    changes: List[Change],
+    changes: list[Change],
     config: AudienceConfig,
-    base_url: Optional[str] = None,
+    base_url: str | None = None,
 ) -> str:
     """Format a single section of the changelog.
 
@@ -406,7 +390,7 @@ def format_changelog_section(
 def _format_change_for_prompt(
     change: Change,
     config: AudienceConfig,
-    base_url: Optional[str],
+    base_url: str | None,
 ) -> str:
     """Format a single change for inclusion in the prompt.
 
@@ -436,10 +420,7 @@ def _format_change_for_prompt(
         lines.append(f"  Technical detail: {sanitize_content(change.technical_detail)}")
 
     if change.breaking:
-        lines.append(
-            f"  Breaking: severity={change.breaking.severity}, "
-            f"affected={change.breaking.affected}"
-        )
+        lines.append(f"  Breaking: severity={change.breaking.severity}, affected={change.breaking.affected}")
         if config.breaking_migration and change.breaking.migration:
             migration_steps = "; ".join(sanitize_content(step) for step in change.breaking.migration)
             lines.append(f"  Migration: {migration_steps}")
@@ -485,7 +466,7 @@ def _format_change_for_prompt(
 LENGTH_BUDGET_RATIO = 0.85
 
 
-def get_length_budget(config: AudienceConfig) -> Optional[int]:
+def get_length_budget(config: AudienceConfig) -> int | None:
     """Return the character budget to put in the prompt, if any.
 
     Only a validation.max_length below the default is treated as a real
@@ -497,7 +478,7 @@ def get_length_budget(config: AudienceConfig) -> Optional[int]:
     return max(1, int(validation.max_length * LENGTH_BUDGET_RATIO))
 
 
-def build_retry_prompt(prompt: str, previous: str, errors: List[str], config: AudienceConfig) -> str:
+def build_retry_prompt(prompt: str, previous: str, errors: list[str], config: AudienceConfig) -> str:
     """Build a follow-up prompt asking the LLM to fix a changelog that failed validation.
 
     Args:
@@ -531,11 +512,11 @@ Generate the corrected changelog now. Output only the changelog:"""
 
 
 def build_changelog_prompt(
-    changes: List[Change],
+    changes: list[Change],
     config: AudienceConfig,
     language: str,
     version: str,
-    base_url: Optional[str] = None,
+    base_url: str | None = None,
 ) -> str:
     """Build the LLM prompt for Phase 2 changelog generation.
 
@@ -614,10 +595,14 @@ def build_changelog_prompt(
     else:
         # Explicit instruction to NOT consolidate
         format_reqs.append("- List EACH change as a SEPARATE bullet point - do NOT consolidate or merge items")
-        format_reqs.append("- Include ALL changes from the list above - do not skip or summarize multiple items into one")
+        format_reqs.append(
+            "- Include ALL changes from the list above - do not skip or summarize multiple items into one"
+        )
 
     if config.group_related:
-        format_reqs.append("- You may use sub-headings within sections to organize (e.g., 'Authentication', 'Chat Widget')")
+        format_reqs.append(
+            "- You may use sub-headings within sections to organize (e.g., 'Authentication', 'Chat Widget')"
+        )
 
     format_reqs.append(f"- Sections to include (in order): {', '.join(config.sections)}")
     format_reqs.append("- NEVER include empty sections - if a section has no relevant changes, omit it entirely")
@@ -669,7 +654,7 @@ Generate the changelog now:"""
 
 
 def build_metadata_prompt(
-    changes: List[Change],
+    changes: list[Change],
     config: AudienceConfig,
     language: str,
     version: str,
@@ -824,11 +809,11 @@ def parse_metadata_response(response: str) -> ReleaseMetadata:
 
 
 def generate_changelog(
-    changes: List[Change],
+    changes: list[Change],
     config: AudienceConfig,
     version: str,
     language: str,
-    base_url: Optional[str] = None,
+    base_url: str | None = None,
 ) -> str:
     """Generate a changelog prompt for a single audience and language.
 
@@ -868,12 +853,12 @@ def generate_changelog(
 
 
 def generate_changelogs(
-    changes: List[Change],
+    changes: list[Change],
     changelog_config: ChangelogConfig,
     version: str,
-    base_url: Optional[str],
+    base_url: str | None,
     llm_caller: Callable[[str], str],
-) -> Tuple[Dict[str, Dict[str, str]], Dict[str, Dict[str, ReleaseMetadata]]]:
+) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, ReleaseMetadata]]]:
     """Generate changelogs for all audiences and languages.
 
     Args:
@@ -888,8 +873,8 @@ def generate_changelogs(
         - changelogs: {audience: {language: content}}
         - metadata: {audience: {language: ReleaseMetadata}}
     """
-    changelogs: Dict[str, Dict[str, str]] = {}
-    metadata: Dict[str, Dict[str, ReleaseMetadata]] = {}
+    changelogs: dict[str, dict[str, str]] = {}
+    metadata: dict[str, dict[str, ReleaseMetadata]] = {}
 
     for audience_name, audience_config in changelog_config.audiences.items():
         changelogs[audience_name] = {}

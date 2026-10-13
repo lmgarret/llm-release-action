@@ -12,8 +12,8 @@ Features:
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, List, Tuple
 
 import pathspec
 from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
@@ -28,8 +28,8 @@ class FileDiff:
     """Represents a parsed file diff."""
 
     path: str
-    added_lines: List[str] = field(default_factory=list)
-    removed_lines: List[str] = field(default_factory=list)
+    added_lines: list[str] = field(default_factory=list)
+    removed_lines: list[str] = field(default_factory=list)
     is_binary: bool = False
     is_rename: bool = False
     old_path: str = ""
@@ -47,7 +47,7 @@ class DiffAnalysisResult:
     extracted_changes: str
     diffs_processed: int
     total_lines: int
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 # Priority patterns for file ordering
@@ -108,7 +108,7 @@ Diff to analyze:
 """
 
 
-def parse_patterns(patterns_str: str) -> List[str]:
+def parse_patterns(patterns_str: str) -> list[str]:
     """Parse comma-separated patterns string.
 
     Args:
@@ -123,7 +123,7 @@ def parse_patterns(patterns_str: str) -> List[str]:
     return [p.strip() for p in patterns_str.split(",") if p.strip()]
 
 
-def parse_unified_diff(diff_text: str) -> List[FileDiff]:
+def parse_unified_diff(diff_text: str) -> list[FileDiff]:
     """Parse unified diff output into FileDiff objects.
 
     Uses the unidiff library to parse git diff output.
@@ -139,12 +139,12 @@ def parse_unified_diff(diff_text: str) -> List[FileDiff]:
 
     try:
         patch_set = PatchSet(diff_text)
-    except Exception as e:
+    except Exception:
         # If parsing fails, return empty list
         # Caller should handle this case
         return []
 
-    diffs: List[FileDiff] = []
+    diffs: list[FileDiff] = []
 
     for patched_file in patch_set:
         # Determine the file path (prefer target path for new/modified files)
@@ -179,8 +179,8 @@ def parse_unified_diff(diff_text: str) -> List[FileDiff]:
             path = source_path
 
         # Extract added and removed lines
-        added_lines: List[str] = []
-        removed_lines: List[str] = []
+        added_lines: list[str] = []
+        removed_lines: list[str] = []
 
         for hunk in patched_file:
             for line in hunk:
@@ -190,11 +190,7 @@ def parse_unified_diff(diff_text: str) -> List[FileDiff]:
                     removed_lines.append(line.value.rstrip("\n"))
 
         # Detect binary files (no added/removed lines and special markers)
-        is_binary = (
-            not added_lines
-            and not removed_lines
-            and len(list(patched_file)) == 0
-        )
+        is_binary = not added_lines and not removed_lines and len(list(patched_file)) == 0
 
         file_diff = FileDiff(
             path=path,
@@ -210,7 +206,7 @@ def parse_unified_diff(diff_text: str) -> List[FileDiff]:
     return diffs
 
 
-def filter_diffs(diffs: List[FileDiff], exclude_patterns: str) -> List[FileDiff]:
+def filter_diffs(diffs: list[FileDiff], exclude_patterns: str) -> list[FileDiff]:
     """Filter diffs using gitignore-style exclusion patterns.
 
     Args:
@@ -227,7 +223,7 @@ def filter_diffs(diffs: List[FileDiff], exclude_patterns: str) -> List[FileDiff]
     # Create pathspec for matching
     spec = pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, patterns)
 
-    filtered: List[FileDiff] = []
+    filtered: list[FileDiff] = []
     for diff in diffs:
         if not spec.match_file(diff.path):
             filtered.append(diff)
@@ -258,7 +254,7 @@ def get_file_priority(path: str) -> int:
     return 4  # Default priority
 
 
-def prioritize_diffs(diffs: List[FileDiff]) -> List[FileDiff]:
+def prioritize_diffs(diffs: list[FileDiff]) -> list[FileDiff]:
     """Sort diffs by priority (lowest priority number first).
 
     Args:
@@ -268,17 +264,17 @@ def prioritize_diffs(diffs: List[FileDiff]) -> List[FileDiff]:
         Sorted list of FileDiff objects.
     """
 
-    def sort_key(diff: FileDiff) -> Tuple[int, str]:
+    def sort_key(diff: FileDiff) -> tuple[int, str]:
         return (get_file_priority(diff.path), diff.path.lower())
 
     return sorted(diffs, key=sort_key)
 
 
 def limit_diffs(
-    diffs: List[FileDiff],
+    diffs: list[FileDiff],
     max_files: int,
     max_lines: int,
-) -> Tuple[List[FileDiff], List[str]]:
+) -> tuple[list[FileDiff], list[str]]:
     """Apply file and line limits to diffs.
 
     Keeps diffs until either limit is reached, maintaining priority order.
@@ -291,8 +287,8 @@ def limit_diffs(
     Returns:
         Tuple of (kept_diffs, warnings).
     """
-    kept: List[FileDiff] = []
-    warnings: List[str] = []
+    kept: list[FileDiff] = []
+    warnings: list[str] = []
     total_lines = 0
 
     for diff in diffs:
@@ -303,9 +299,7 @@ def limit_diffs(
 
         if total_lines + diff.line_count > max_lines:
             remaining = len(diffs) - len(kept)
-            warnings.append(
-                f"Reached line limit ({max_lines}), skipped {remaining} files"
-            )
+            warnings.append(f"Reached line limit ({max_lines}), skipped {remaining} files")
             break
 
         kept.append(diff)
@@ -383,7 +377,7 @@ def extract_changes_from_diff(
     return response.strip()
 
 
-def _combine_extracted_changes(changes_list: List[str]) -> str:
+def _combine_extracted_changes(changes_list: list[str]) -> str:
     """Combine multiple extracted changes into one summary.
 
     Merges ADDED/REMOVED/MODIFIED sections from multiple files.
@@ -394,9 +388,9 @@ def _combine_extracted_changes(changes_list: List[str]) -> str:
     Returns:
         Combined changes string.
     """
-    added_items: List[str] = []
-    removed_items: List[str] = []
-    modified_items: List[str] = []
+    added_items: list[str] = []
+    removed_items: list[str] = []
+    modified_items: list[str] = []
 
     for changes in changes_list:
         # Extract <added> section
@@ -474,7 +468,7 @@ def analyze_diffs(
     Returns:
         DiffAnalysisResult with extracted changes and metadata.
     """
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     # Step 1: Parse diffs
     diffs = parse_unified_diff(diff_text)
@@ -489,9 +483,7 @@ def analyze_diffs(
     # Step 2: Filter by exclusion patterns
     filtered_diffs = filter_diffs(diffs, exclude_patterns)
     if len(filtered_diffs) < len(diffs):
-        warnings.append(
-            f"Filtered out {len(diffs) - len(filtered_diffs)} files by exclusion patterns"
-        )
+        warnings.append(f"Filtered out {len(diffs) - len(filtered_diffs)} files by exclusion patterns")
 
     if not filtered_diffs:
         return DiffAnalysisResult(
@@ -519,7 +511,7 @@ def analyze_diffs(
     # Step 5: Format and extract changes
     # Group diffs into batches to avoid overly long prompts
     batch_size = 5  # Process 5 files at a time
-    all_changes: List[str] = []
+    all_changes: list[str] = []
     total_lines = 0
 
     for i in range(0, len(limited_diffs), batch_size):

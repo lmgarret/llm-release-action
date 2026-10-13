@@ -9,18 +9,42 @@ an allowlist of structural tags, with links restricted to safe schemes.
 import html
 import re
 from html.parser import HTMLParser
-from typing import List, Tuple
 
 MAX_CHANGELOG_BYTES = 65536
 
 _ALLOWED_TAGS = {
-    "a", "b", "blockquote", "br", "code", "em", "h1", "h2", "h3", "h4", "h5",
-    "h6", "hr", "i", "li", "ol", "p", "pre", "strong", "ul",
+    "a",
+    "b",
+    "blockquote",
+    "br",
+    "code",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "i",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "strong",
+    "ul",
 }
 _VOID_TAGS = {"br", "hr"}
 _DROP_CONTENT_TAGS = {
-    "embed", "iframe", "noscript", "object", "script", "style", "template",
-    "textarea", "title",
+    "embed",
+    "iframe",
+    "noscript",
+    "object",
+    "script",
+    "style",
+    "template",
+    "textarea",
+    "title",
 }
 _SAFE_HREF = re.compile(r"(?i)^(?:https?://|mailto:|#|/)")
 
@@ -30,10 +54,10 @@ class _AllowlistSanitizer(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.parts: List[str] = []
+        self.parts: list[str] = []
         self._skip_depth = 0
 
-    def handle_starttag(self, tag: str, attrs: List[Tuple[str, str]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str]]) -> None:
         if tag in _DROP_CONTENT_TAGS:
             self._skip_depth += 1
             return

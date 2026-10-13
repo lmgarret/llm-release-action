@@ -9,32 +9,27 @@ Tests cover:
 - Validation mode parsing
 """
 
-import pytest
-import sys
 import os
-from unittest.mock import Mock
+import sys
+
+import pytest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from content_scanner import (
+    ScanResult,
     ThreatLevel,
     ValidationMode,
-    ScanResult,
-    ROLE_HIJACKING,
-    INSTRUCTION_INJECTION,
-    DELIMITER_INJECTION,
-    SANITIZATION_PATTERNS,
-    RESPONSE_INJECTION_INDICATORS,
-    scan_content_override,
-    handle_scan_result,
-    sanitize_content,
-    validate_with_llm,
-    validate_response,
-    parse_validation_mode,
-    estimate_tokens,
     detect_context_attacks,
     detect_encoding_tricks,
+    estimate_tokens,
+    handle_scan_result,
+    parse_validation_mode,
+    sanitize_content,
+    scan_content_override,
+    validate_response,
+    validate_with_llm,
 )
 
 
@@ -278,6 +273,7 @@ class TestValidateWithLlm:
 
     def test_returns_true_on_yes(self) -> None:
         """LLM returning 'YES' should indicate injection."""
+
         def mock_llm(prompt: str) -> str:
             return "YES"
 
@@ -286,6 +282,7 @@ class TestValidateWithLlm:
 
     def test_returns_true_on_yes_with_explanation(self) -> None:
         """LLM returning 'YES, this is...' should indicate injection."""
+
         def mock_llm(prompt: str) -> str:
             return "YES, this appears to be a prompt injection attempt."
 
@@ -294,6 +291,7 @@ class TestValidateWithLlm:
 
     def test_returns_false_on_no(self) -> None:
         """LLM returning 'NO' should indicate clean."""
+
         def mock_llm(prompt: str) -> str:
             return "NO"
 
@@ -302,6 +300,7 @@ class TestValidateWithLlm:
 
     def test_returns_false_on_no_with_explanation(self) -> None:
         """LLM returning 'NO, this is...' should indicate clean."""
+
         def mock_llm(prompt: str) -> str:
             return "NO, this is normal changelog content."
 

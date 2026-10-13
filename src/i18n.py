@@ -5,10 +5,8 @@ content directly in the target language, but we provide section name translation
 tone guidance to ensure consistency across languages.
 """
 
-from typing import Dict
-
 # Section icons mapping for visual enhancement
-SECTION_ICONS: Dict[str, str] = {
+SECTION_ICONS: dict[str, str] = {
     "breaking": "💥",
     "security": "🔒",
     "features": "✨",
@@ -23,7 +21,7 @@ SECTION_ICONS: Dict[str, str] = {
 
 # Section names in different languages
 # Common languages are pre-defined; the LLM handles other languages dynamically
-SECTION_NAMES: Dict[str, Dict[str, str]] = {
+SECTION_NAMES: dict[str, dict[str, str]] = {
     "en": {
         "breaking": "Breaking Changes",
         "security": "Security",
@@ -111,18 +109,16 @@ SECTION_NAMES: Dict[str, Dict[str, str]] = {
 }
 
 # Tone descriptions for LLM prompts
-TONE_DESCRIPTIONS: Dict[str, str] = {
+TONE_DESCRIPTIONS: dict[str, str] = {
     "formal": "Use formal, professional language appropriate for official documentation.",
     "casual": "Use casual, conversational language that's friendly and approachable.",
     "professional": "Use clear, professional language that's informative but not stiff.",
-    "excited": (
-        "Use enthusiastic, energetic language that highlights the excitement of new features!"
-    ),
+    "excited": ("Use enthusiastic, energetic language that highlights the excitement of new features!"),
     "friendly": "Use warm, friendly language that makes users feel welcomed and supported.",
 }
 
 # Language names for prompt instructions
-LANGUAGE_NAMES: Dict[str, str] = {
+LANGUAGE_NAMES: dict[str, str] = {
     "en": "English",
     "es": "Spanish",
     "ja": "Japanese",
@@ -196,9 +192,7 @@ def get_tone_description(tone: str) -> str:
         KeyError: If the tone is not recognized.
     """
     if tone not in TONE_DESCRIPTIONS:
-        raise KeyError(
-            f"Unknown tone '{tone}'. Valid tones: {list(TONE_DESCRIPTIONS.keys())}"
-        )
+        raise KeyError(f"Unknown tone '{tone}'. Valid tones: {list(TONE_DESCRIPTIONS.keys())}")
     return TONE_DESCRIPTIONS[tone]
 
 
