@@ -70,11 +70,11 @@ inputs:
     required: false
     default: 'false'
   content_override:
-    description: 'Markdown content for multi-repo analysis (bypasses git). Format: ## Repo\n### Features\n- item. See README.'
+    description: 'Markdown content for multi-repo analysis (bypasses git). Format: ## Repo\n### Features\n- item. See https://lmgarret.github.io/llm-release-action/how-to/combine-repositories/'
     required: false
     default: ''
   changelog_config:
-    description: 'YAML config for audiences. Format: {audience: {preset, languages, tone, ...}}. Presets: developer, customer, executive, marketing, security, ops. See README.'
+    description: 'YAML config for audiences. Format: {audience: {preset, languages, tone, ...}}. Presets: developer, customer, executive, marketing, security, ops. See https://lmgarret.github.io/llm-release-action/reference/changelog-config/'
     required: false
     default: ''
   validate_injections:
@@ -121,7 +121,7 @@ outputs:
     description: 'Calculated next semantic version'
     value: ${{ steps.analyze.outputs.next_version }}
   changelogs:
-    description: 'JSON object with changelogs: {audience: {language: markdown}}. Default: {default: {en: "..."}}. See README for schema. Untrusted text: pass it to scripts via env, never interpolate it into run or script.'
+    description: 'JSON object with changelogs: {audience: {language: markdown}}. Default: {default: {en: "..."}}. Schema: https://lmgarret.github.io/llm-release-action/reference/outputs/. Untrusted text: pass it to scripts via env, never interpolate it into run or script.'
     value: ${{ steps.analyze.outputs.changelogs }}
   changelog_files:
     description: 'JSON object with the path of a file holding each changelog: {audience: {language: path}}. Files are under RUNNER_TEMP, readable by later steps in the same job. Lets steps use a changelog (e.g. gh release create --notes-file) without handling its text in shell.'
@@ -145,7 +145,7 @@ outputs:
     description: 'Project type used for the analysis (library, api, service, app, or generic)'
     value: ${{ steps.analyze.outputs.project_type }}
   usage:
-    description: 'JSON object with LLM usage statistics: {total_calls, total_tokens, total_latency_ms, phase1_tokens, phase2_tokens, ...}'
+    description: 'JSON object with LLM usage per model: {model: {calls, input_tokens, output_tokens, latency_ms}}'
     value: ${{ steps.analyze.outputs.usage }}
   warnings:
     description: 'JSON array of warning messages (staleness, truncation, etc.)'

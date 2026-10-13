@@ -1,0 +1,73 @@
+---
+title: LLM Release Action
+description: Analyze commits with an LLM, get a semantic version bump and changelogs for every audience and language.
+template: splash
+hero:
+  tagline: Analyze commits with an LLM, get a semantic version bump and changelogs written for developers, customers, executives and more, in any language.
+  actions:
+    - text: Your first release
+      link: /llm-release-action/tutorials/first-release/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/lmgarret/llm-release-action
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## What it does
+
+<CardGrid>
+  <Card title="Semantic version analysis" icon="seti:git">
+    Reads the commits since the last semver tag, detects breaking changes from commit
+    markers and diffs, and suggests `major`, `minor` or `patch`. Conservative: a major
+    bump needs explicit evidence.
+  </Card>
+  <Card title="Multi-audience changelogs" icon="document">
+    One run writes a changelog per audience (developer, customer, executive, marketing,
+    security, ops) and per language, each with its own tone, sections and filters.
+  </Card>
+  <Card title="Any LLM provider" icon="puzzle">
+    Works with every provider [LiteLLM](https://docs.litellm.ai/docs/providers) supports:
+    AWS Bedrock, Anthropic, OpenAI, Azure and more. Reports token usage per model.
+  </Card>
+  <Card title="Net-state changelogs" icon="approve-check">
+    A feature added then reverted doesn't show up. Related commits become one entry.
+  </Card>
+</CardGrid>
+
+## Find your way
+
+These docs follow the [Diátaxis](https://diataxis.fr/) framework.
+
+<CardGrid>
+  <LinkCard
+    title="Tutorials"
+    description="Learn by doing: set up the action and publish your first release."
+    href="/llm-release-action/tutorials/first-release/"
+  />
+  <LinkCard
+    title="How-to guides"
+    description="Recipes for specific goals: PR comments, translations, app store notes, multi-repo releases..."
+    href="/llm-release-action/how-to/create-github-release/"
+  />
+  <LinkCard
+    title="Reference"
+    description="Every input, output, config field and default."
+    href="/llm-release-action/reference/inputs/"
+  />
+  <LinkCard
+    title="Explanation"
+    description="How the analysis works, why bumps are conservative, and the security model."
+    href="/llm-release-action/explanation/how-it-works/"
+  />
+</CardGrid>
+
+## For LLMs and agents
+
+The whole documentation is available as plain text:
+
+- [`llms.txt`](/llm-release-action/llms.txt): index of the documentation
+- [`llms-full.txt`](/llm-release-action/llms-full.txt): every page in one file
+- [`llms-small.txt`](/llm-release-action/llms-small.txt): a condensed version for small context windows
