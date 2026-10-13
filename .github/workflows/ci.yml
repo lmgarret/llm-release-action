@@ -29,11 +29,37 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --require-hashes -r src/requirements.txt
-          pip install --require-hashes -r tests/requirements.txt
+          pip install --quiet --require-hashes -r .github/uv-requirements.txt
+          uv sync --locked --no-default-groups --group test
 
       - name: Run tests
-        run: python -m pytest -q tests
+        run: uv run --no-sync pytest -q tests
+
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Install linters
+        run: |
+          pip install --quiet --require-hashes -r .github/uv-requirements.txt
+          uv sync --locked --only-group lint
+
+      - name: Ruff lint
+        run: uv run --no-sync ruff check --output-format=github .
+
+      - name: Ruff format
+        run: uv run --no-sync ruff format --check .
 
   zizmor:
     runs-on: ubuntu-latest
@@ -51,7 +77,9 @@ jobs:
           python-version: '3.11'
 
       - name: Install zizmor
-        run: pip install --require-hashes -r .github/zizmor-requirements.txt
+        run: |
+          pip install --quiet --require-hashes -r .github/uv-requirements.txt
+          uv sync --locked --only-group lint
 
       - name: Audit workflows and action
-        run: zizmor --format=github .
+        run: uv run --no-sync zizmor --format=github .
