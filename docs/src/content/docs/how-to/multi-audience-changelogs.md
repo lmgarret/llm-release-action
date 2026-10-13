@@ -93,4 +93,5 @@ catastrophic backtracking (such as `(a+)+`) or longer than 200 characters are re
 
 See the [changelog config reference](/llm-release-action/reference/changelog-config/)
 for every field, and [Keep internal details out of changelogs](/llm-release-action/how-to/filter-internal-content/)
-for leak detection.
+for leak detection. To try a config before using it in a workflow, see
+[Preview a changelog config locally](/llm-release-action/how-to/preview-changelog-config/).
