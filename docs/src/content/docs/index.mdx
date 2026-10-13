@@ -4,7 +4,29 @@ description: Analyze commits with an LLM, get a semantic version bump and change
 template: splash
 hero:
   image:
-    file: ../../assets/logo.svg
+    html: |
+      <div class="release-demo" aria-label="Example: six commits become version v1.4.0 with a two-line changelog">
+        <div class="rd-card">
+          <div class="rd-title">Commits since v1.3.2</div>
+          <ul class="rd-commits">
+            <li class="rd-dropped"><code>c08d531</code> revert: Stripe payment</li>
+            <li><code>9f1e2aa</code> feat: OAuth scope support</li>
+            <li><code>e44b07f</code> feat: add dark mode</li>
+            <li class="rd-dropped"><code>3c9a4d2</code> feat: add Stripe payment</li>
+            <li><code>7bd2e10</code> fix: OAuth token refresh</li>
+            <li><code>a1f3c9e</code> feat: add OAuth login</li>
+          </ul>
+        </div>
+        <div class="rd-arrow" aria-hidden="true">↓</div>
+        <div class="rd-card rd-output">
+          <div class="rd-title"><span class="rd-version">v1.4.0</span><span class="rd-bump">minor</span></div>
+          <div class="rd-heading">Features</div>
+          <ul class="rd-changelog">
+            <li>OAuth 2.0 login with token refresh and scope support</li>
+            <li>Dark mode</li>
+          </ul>
+        </div>
+      </div>
   tagline: Analyze commits with an LLM, get a semantic version bump and changelogs written for developers, customers, executives and more, in any language.
   actions:
     - text: Your first release
