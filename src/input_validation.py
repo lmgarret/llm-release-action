@@ -8,15 +8,14 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import regex
 import yaml
 
 from config import validate_changelog_config
-from content_scanner import scan_content_override, handle_scan_result, ValidationMode
+from content_scanner import ValidationMode, handle_scan_result, scan_content_override
 from project_profile import VALID_PROJECT_TYPE_INPUTS
-
 
 # Maximum pattern length to reduce ReDoS attack surface
 MAX_PATTERN_LENGTH = 200
@@ -37,7 +36,7 @@ class PatternTimeoutError(Exception):
     pass
 
 
-def validate_pattern_safety(pattern: str) -> List[str]:
+def validate_pattern_safety(pattern: str) -> list[str]:
     """Validate that a regex pattern is not prone to ReDoS attacks.
 
     Detects dangerous patterns:
@@ -55,9 +54,7 @@ def validate_pattern_safety(pattern: str) -> List[str]:
 
     # Check pattern length
     if len(pattern) > MAX_PATTERN_LENGTH:
-        errors.append(
-            f"Pattern too long ({len(pattern)} chars, max {MAX_PATTERN_LENGTH})"
-        )
+        errors.append(f"Pattern too long ({len(pattern)} chars, max {MAX_PATTERN_LENGTH})")
         return errors  # Skip other checks for overly long patterns
 
     # Detect nested quantifiers: (...)+ or (...)* followed by another quantifier
@@ -71,9 +68,7 @@ def validate_pattern_safety(pattern: str) -> List[str]:
 
     for np in nested_quantifier_patterns:
         if re.search(np, pattern):
-            errors.append(
-                f"Pattern contains nested quantifiers which can cause catastrophic backtracking: {pattern}"
-            )
+            errors.append(f"Pattern contains nested quantifiers which can cause catastrophic backtracking: {pattern}")
             break
 
     # Detect overlapping alternations with quantifier: (a|a)+ or similar
@@ -85,17 +80,13 @@ def validate_pattern_safety(pattern: str) -> List[str]:
             alt1, alt2 = match.group(1), match.group(2)
             # Check for obvious overlap (one starts with the other)
             if alt1.startswith(alt2) or alt2.startswith(alt1):
-                errors.append(
-                    f"Pattern contains overlapping alternations which can cause backtracking: {pattern}"
-                )
+                errors.append(f"Pattern contains overlapping alternations which can cause backtracking: {pattern}")
 
     # Detect patterns like .* or .+ followed by same, which can be slow
     if re.search(r"\.\*.*\.\*", pattern) or re.search(r"\.\+.*\.\+", pattern):
         # Only warn if there's no anchoring
         if not pattern.startswith("^") and not pattern.endswith("$"):
-            errors.append(
-                f"Pattern contains multiple unbounded wildcards without anchoring: {pattern}"
-            )
+            errors.append(f"Pattern contains multiple unbounded wildcards without anchoring: {pattern}")
 
     return errors
 
@@ -112,45 +103,35 @@ class TimeoutPattern:
         try:
             return self._pattern.search(string, *args, timeout=self._timeout, **kwargs)
         except TimeoutError:
-            raise PatternTimeoutError(
-                f"Pattern matching timed out after {self._timeout}s"
-            )
+            raise PatternTimeoutError(f"Pattern matching timed out after {self._timeout}s") from None
 
     def match(self, string: str, *args, **kwargs):
         """Match with timeout."""
         try:
             return self._pattern.match(string, *args, timeout=self._timeout, **kwargs)
         except TimeoutError:
-            raise PatternTimeoutError(
-                f"Pattern matching timed out after {self._timeout}s"
-            )
+            raise PatternTimeoutError(f"Pattern matching timed out after {self._timeout}s") from None
 
     def fullmatch(self, string: str, *args, **kwargs):
         """Fullmatch with timeout."""
         try:
             return self._pattern.fullmatch(string, *args, timeout=self._timeout, **kwargs)
         except TimeoutError:
-            raise PatternTimeoutError(
-                f"Pattern matching timed out after {self._timeout}s"
-            )
+            raise PatternTimeoutError(f"Pattern matching timed out after {self._timeout}s") from None
 
     def findall(self, string: str, *args, **kwargs):
         """Findall with timeout."""
         try:
             return self._pattern.findall(string, *args, timeout=self._timeout, **kwargs)
         except TimeoutError:
-            raise PatternTimeoutError(
-                f"Pattern matching timed out after {self._timeout}s"
-            )
+            raise PatternTimeoutError(f"Pattern matching timed out after {self._timeout}s") from None
 
     def sub(self, repl, string: str, *args, **kwargs):
         """Sub with timeout."""
         try:
             return self._pattern.sub(repl, string, *args, timeout=self._timeout, **kwargs)
         except TimeoutError:
-            raise PatternTimeoutError(
-                f"Pattern matching timed out after {self._timeout}s"
-            )
+            raise PatternTimeoutError(f"Pattern matching timed out after {self._timeout}s") from None
 
     @property
     def pattern(self):
@@ -158,9 +139,7 @@ class TimeoutPattern:
         return self._pattern.pattern
 
 
-def safe_compile_pattern(
-    pattern: str, timeout: float = REGEX_TIMEOUT
-) -> TimeoutPattern:
+def safe_compile_pattern(pattern: str, timeout: float = REGEX_TIMEOUT) -> TimeoutPattern:
     """Safely compile a regex pattern with timeout support.
 
     Uses the `regex` library which supports timeout on matching operations.
@@ -186,9 +165,9 @@ def safe_compile_pattern(
         compiled = regex.compile(pattern, regex.IGNORECASE)
         return TimeoutPattern(compiled, timeout)
     except regex.error as e:
-        raise PatternCompilationError(f"Invalid regex pattern: {e}")
+        raise PatternCompilationError(f"Invalid regex pattern: {e}") from e
     except Exception as e:
-        raise PatternCompilationError(f"Failed to compile pattern: {e}")
+        raise PatternCompilationError(f"Failed to compile pattern: {e}") from e
 
 
 @dataclass
@@ -196,10 +175,10 @@ class InputValidationResult:
     """Result of input validation."""
 
     valid: bool
-    errors: List[str]
+    errors: list[str]
 
 
-def validate_version_format(version: str) -> List[str]:
+def validate_version_format(version: str) -> list[str]:
     """Validate version string against semver pattern.
 
     Args:
@@ -214,7 +193,7 @@ def validate_version_format(version: str) -> List[str]:
     return errors
 
 
-def validate_language_code(code: str) -> List[str]:
+def validate_language_code(code: str) -> list[str]:
     """Validate a language code against BCP 47 standard.
 
     Prevents prompt injection by rejecting anything that isn't
@@ -248,7 +227,6 @@ def validate_language_code(code: str) -> List[str]:
 
     # Try to import langcodes for validation
     try:
-        import langcodes
         from langcodes import Language
 
         # Parse as BCP 47 tag
@@ -278,7 +256,7 @@ def validate_language_code(code: str) -> List[str]:
     return errors
 
 
-def validate_filter_value(value: str, field_name: str, is_pattern: bool = False) -> List[str]:
+def validate_filter_value(value: str, field_name: str, is_pattern: bool = False) -> list[str]:
     """Validate filter values (patterns, authors, labels).
 
     Args:
@@ -330,7 +308,7 @@ def validate_glob_pattern(pattern: str) -> bool:
     return True
 
 
-def validate_gitignore_pattern(pattern: str) -> List[str]:
+def validate_gitignore_pattern(pattern: str) -> list[str]:
     """Validate a gitignore-style pattern for context_files.
 
     Supports negation (!) and standard glob patterns.
@@ -371,7 +349,7 @@ def validate_gitignore_pattern(pattern: str) -> List[str]:
     return errors
 
 
-def validate_context_files_patterns(patterns_str: str) -> List[str]:
+def validate_context_files_patterns(patterns_str: str) -> list[str]:
     """Validate comma-separated context file patterns.
 
     Args:
@@ -395,6 +373,7 @@ def validate_context_files_patterns(patterns_str: str) -> List[str]:
     try:
         import pathspec
         from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
+
         pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, patterns)
     except ImportError:
         # pathspec not installed yet - skip this check
@@ -405,7 +384,7 @@ def validate_context_files_patterns(patterns_str: str) -> List[str]:
     return errors
 
 
-def validate_context_max_tokens(value: str) -> List[str]:
+def validate_context_max_tokens(value: str) -> list[str]:
     """Validate context_max_tokens input.
 
     Args:
@@ -431,7 +410,7 @@ def validate_context_max_tokens(value: str) -> List[str]:
     return errors
 
 
-def validate_analyze_diffs(value: str) -> List[str]:
+def validate_analyze_diffs(value: str) -> list[str]:
     """Validate analyze_diffs input (boolean string).
 
     Args:
@@ -447,14 +426,12 @@ def validate_analyze_diffs(value: str) -> List[str]:
 
     normalized = value.strip().lower()
     if normalized not in ("true", "false"):
-        errors.append(
-            f"analyze_diffs must be 'true' or 'false', got '{value}'"
-        )
+        errors.append(f"analyze_diffs must be 'true' or 'false', got '{value}'")
 
     return errors
 
 
-def validate_diff_exclude_patterns(patterns: str) -> List[str]:
+def validate_diff_exclude_patterns(patterns: str) -> list[str]:
     """Validate diff_exclude_patterns input (comma-separated gitignore-style patterns).
 
     Reuses validate_context_files_patterns for consistent pattern validation.
@@ -469,7 +446,7 @@ def validate_diff_exclude_patterns(patterns: str) -> List[str]:
     return validate_context_files_patterns(patterns)
 
 
-def validate_diff_max_files(value: str) -> List[str]:
+def validate_diff_max_files(value: str) -> list[str]:
     """Validate diff_max_files input (non-negative integer).
 
     Args:
@@ -493,7 +470,7 @@ def validate_diff_max_files(value: str) -> List[str]:
     return errors
 
 
-def validate_diff_max_total_lines(value: str) -> List[str]:
+def validate_diff_max_total_lines(value: str) -> list[str]:
     """Validate diff_max_total_lines input (non-negative integer).
 
     Args:
@@ -520,7 +497,7 @@ def validate_diff_max_total_lines(value: str) -> List[str]:
 VALID_THINKING_MODES = ("", "adaptive", "off")
 
 
-def validate_temperature(value: str) -> List[str]:
+def validate_temperature(value: str) -> list[str]:
     """Validate temperature input.
 
     Args:
@@ -537,16 +514,14 @@ def validate_temperature(value: str) -> List[str]:
     try:
         temperature = float(value)
         if not 0.0 <= temperature <= 2.0:
-            errors.append(
-                f"temperature must be between 0.0 and 2.0, got {temperature}"
-            )
+            errors.append(f"temperature must be between 0.0 and 2.0, got {temperature}")
     except ValueError:
         errors.append(f"temperature must be a number, got '{value}'")
 
     return errors
 
 
-def validate_thinking(value: str) -> List[str]:
+def validate_thinking(value: str) -> list[str]:
     """Validate thinking input.
 
     Args:
@@ -565,7 +540,7 @@ def validate_thinking(value: str) -> List[str]:
     return errors
 
 
-def validate_extra_llm_params(value: str) -> List[str]:
+def validate_extra_llm_params(value: str) -> list[str]:
     """Validate extra_llm_params input.
 
     Args:
@@ -586,14 +561,12 @@ def validate_extra_llm_params(value: str) -> List[str]:
         return errors
 
     if not isinstance(parsed, dict):
-        errors.append(
-            f"extra_llm_params must be a JSON object, got {type(parsed).__name__}"
-        )
+        errors.append(f"extra_llm_params must be a JSON object, got {type(parsed).__name__}")
 
     return errors
 
 
-def validate_project_type(value: str) -> List[str]:
+def validate_project_type(value: str) -> list[str]:
     """Validate project_type input.
 
     Args:
@@ -609,22 +582,22 @@ def validate_project_type(value: str) -> List[str]:
 
 
 def validate_inputs(
-    current_version: Optional[str] = None,
-    head_ref: Optional[str] = None,
-    content_override: Optional[str] = None,
-    changelog_config: Optional[str] = None,
-    include_diffs: Optional[str] = None,
+    current_version: str | None = None,
+    head_ref: str | None = None,
+    content_override: str | None = None,
+    changelog_config: str | None = None,
+    include_diffs: str | None = None,
     validation_mode: ValidationMode = ValidationMode.BOTH,
-    context_files: Optional[str] = None,
-    context_max_tokens: Optional[str] = None,
-    analyze_diffs: Optional[str] = None,
-    diff_exclude_patterns: Optional[str] = None,
-    diff_max_files: Optional[str] = None,
-    diff_max_total_lines: Optional[str] = None,
-    temperature: Optional[str] = None,
-    thinking: Optional[str] = None,
-    extra_llm_params: Optional[str] = None,
-    project_type: Optional[str] = None,
+    context_files: str | None = None,
+    context_max_tokens: str | None = None,
+    analyze_diffs: str | None = None,
+    diff_exclude_patterns: str | None = None,
+    diff_max_files: str | None = None,
+    diff_max_total_lines: str | None = None,
+    temperature: str | None = None,
+    thinking: str | None = None,
+    extra_llm_params: str | None = None,
+    project_type: str | None = None,
 ) -> InputValidationResult:
     """Validate all action inputs before processing.
 
@@ -649,7 +622,7 @@ def validate_inputs(
     Returns:
         InputValidationResult with valid flag and errors list
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     # Version format validation
     if current_version:
@@ -738,7 +711,7 @@ def validate_inputs(
     return InputValidationResult(valid=len(errors) == 0, errors=errors)
 
 
-def validate_audience_configs(configs: Dict[str, Any]) -> List[str]:
+def validate_audience_configs(configs: dict[str, Any]) -> list[str]:
     """Validate all audience configurations including languages.
 
     Args:
@@ -747,7 +720,7 @@ def validate_audience_configs(configs: Dict[str, Any]) -> List[str]:
     Returns:
         List of validation errors
     """
-    errors: List[str] = []
+    errors: list[str] = []
 
     for audience, settings in configs.items():
         if not isinstance(settings, dict):
@@ -755,9 +728,7 @@ def validate_audience_configs(configs: Dict[str, Any]) -> List[str]:
 
         # Validate exclude patterns (with ReDoS safety check)
         for pattern in settings.get("exclude_patterns", []):
-            pattern_errors = validate_filter_value(
-                pattern, f"{audience}.exclude_patterns", is_pattern=True
-            )
+            pattern_errors = validate_filter_value(pattern, f"{audience}.exclude_patterns", is_pattern=True)
             errors.extend(pattern_errors)
 
         # Validate exclude authors

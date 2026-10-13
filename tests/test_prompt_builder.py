@@ -1,19 +1,18 @@
 """Tests for prompt_builder.py module."""
 
-import pytest
-import sys
 import os
+import sys
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from prompt_builder import (
-    sanitize_message,
-    parse_commit_type,
-    has_breaking_change,
-    summarize_commits_by_type,
-    build_prompt,
     CommitInfo,
+    build_prompt,
+    has_breaking_change,
+    parse_commit_type,
+    sanitize_message,
+    summarize_commits_by_type,
 )
 
 

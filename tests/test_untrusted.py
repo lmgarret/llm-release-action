@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from content_scanner import sanitize_content, validate_with_llm
-from prompt_builder import build_semantic_analysis_prompt, sanitize_message, CommitInfo
+from prompt_builder import CommitInfo, build_semantic_analysis_prompt, sanitize_message
 from prompts import DiffMapConfig, render_diff_map_prompt
 from untrusted import code_fence, neutralize_tags, normalize, wrap
 

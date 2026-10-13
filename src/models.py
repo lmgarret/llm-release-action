@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
 
 
 class ChangeCategory(Enum):
@@ -53,7 +52,7 @@ class BreakingInfo:
 
     severity: str  # high, medium, low
     affected: str  # What is affected
-    migration: List[str] = field(default_factory=list)  # Migration steps
+    migration: list[str] = field(default_factory=list)  # Migration steps
 
 
 @dataclass
@@ -64,16 +63,16 @@ class Change:
     category: ChangeCategory
     title: str
     description: str
-    commits: List[str] = field(default_factory=list)
-    authors: List[str] = field(default_factory=list)
+    commits: list[str] = field(default_factory=list)
+    authors: list[str] = field(default_factory=list)
     importance: Importance = Importance.MEDIUM
-    user_benefit: Optional[str] = None
-    technical_detail: Optional[str] = None
-    breaking: Optional[BreakingInfo] = None
-    labels: List[str] = field(default_factory=list)
-    source: Optional[str] = None  # Source repo for multi-repo
-    pr_number: Optional[int] = None
-    issue_numbers: List[int] = field(default_factory=list)
+    user_benefit: str | None = None
+    technical_detail: str | None = None
+    breaking: BreakingInfo | None = None
+    labels: list[str] = field(default_factory=list)
+    source: str | None = None  # Source repo for multi-repo
+    pr_number: int | None = None
+    issue_numbers: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -82,8 +81,8 @@ class ChangeGroup:
 
     title: str
     description: str
-    changes: List[Change] = field(default_factory=list)
-    category: Optional[ChangeCategory] = None
+    changes: list[Change] = field(default_factory=list)
+    category: ChangeCategory | None = None
 
 
 @dataclass
@@ -103,7 +102,7 @@ class ChangeStats:
     contributors: int = 0
 
     @classmethod
-    def from_changes(cls, changes: List[Change]) -> "ChangeStats":
+    def from_changes(cls, changes: list[Change]) -> "ChangeStats":
         """Calculate stats from a list of changes."""
         stats = cls()
         authors = set()
@@ -157,9 +156,9 @@ class ChangeStats:
 class ReleaseMetadata:
     """Metadata for a release (per audience, per language)."""
 
-    title: Optional[str] = None
-    summary: Optional[str] = None
-    highlights: Optional[List[str]] = None
+    title: str | None = None
+    summary: str | None = None
+    highlights: list[str] | None = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON output."""
@@ -176,8 +175,8 @@ class AnalysisResult:
 
     bump: str  # major, minor, patch
     reasoning: str
-    changes: List[Change] = field(default_factory=list)
-    stats: Optional[ChangeStats] = None
+    changes: list[Change] = field(default_factory=list)
+    stats: ChangeStats | None = None
     changelog: str = ""  # Base changelog generated in Phase 1 (used for Phase 2 transformations)
 
     def __post_init__(self) -> None:

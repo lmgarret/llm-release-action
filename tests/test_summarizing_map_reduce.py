@@ -1,21 +1,20 @@
 """Tests for summarizing_map_reduce module."""
 
-import pytest
-import sys
 import os
-from unittest.mock import Mock, MagicMock
+import sys
+from unittest.mock import Mock
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from summarizing_map_reduce import (
-    estimate_tokens,
-    fits_budget,
-    SummarizingMapReduce,
-    SummarizeResult,
-    summarize_context,
     CONTEXT_MAP_PROMPT,
     CONTEXT_REDUCE_PROMPT,
+    SummarizeResult,
+    SummarizingMapReduce,
+    estimate_tokens,
+    fits_budget,
+    summarize_context,
 )
 
 
@@ -254,7 +253,7 @@ class TestSummarizeContext:
             captured_prompt.append(prompt)
             return "<SUMMARY>summarized</SUMMARY>"
 
-        result = summarize_context(content, max_tokens=10, llm_caller=mock_llm)
+        summarize_context(content, max_tokens=10, llm_caller=mock_llm)
 
         # Should have called with context-focused prompt
         assert len(captured_prompt) > 0

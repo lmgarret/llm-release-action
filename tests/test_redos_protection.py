@@ -7,22 +7,21 @@ Tests cover:
 4. Integration with filter_changes()
 """
 
-import pytest
-import sys
 import os
+import sys
 import time
+
+import pytest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from input_validation import (
     MAX_PATTERN_LENGTH,
-    REGEX_TIMEOUT,
     PatternCompilationError,
-    PatternTimeoutError,
-    validate_pattern_safety,
     safe_compile_pattern,
     validate_filter_value,
+    validate_pattern_safety,
 )
 
 

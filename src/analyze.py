@@ -16,14 +16,52 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import litellm
+
+from analyzer import parse_phase1_response
+from changelog import build_changelog_prompt, build_retry_prompt, filter_changes
+from config import AudienceConfig, ChangelogConfig
+from content_scanner import (
+    ValidationMode,
+    handle_scan_result,
+    parse_validation_mode,
+    scan_content_override,
+    truncate_for_context,
+    validate_with_llm,
+)
+from context_loader import ContextResult, detect_staleness, load_context_files
+from diff_analyzer import analyze_diffs
+from flatten import flatten_changes
+from input_validation import validate_inputs
+from map_reduce import determine_version_from_changes, process_large_input
+from model_config import ModelConfig
+from models import AnalysisResult, Change, ChangeStats, ReleaseMetadata
+from output_sanitizer import sanitize_changelog
+from project_profile import ProjectProfile, resolve_project_profile
+from prompt_builder import (
+    CommitInfo,
+    build_semantic_analysis_prompt,
+    get_commits,
+    has_breaking_change,
+    sanitize_message,
+)
+from repo_url import get_repository_url
+from text_splitter import needs_chunking
+from validation import (
+    ValidationResult,
+    generate_fallback_changelog,
+    truncate_to_length,
+    validate_changelog,
+)
+from version import detect_latest_tag, is_shallow_clone, parse_version
 
 
 @dataclass
 class LLMUsage:
     """Usage statistics for a single LLM call."""
+
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
@@ -34,12 +72,13 @@ class LLMUsage:
 @dataclass
 class AggregateUsage:
     """Aggregate usage statistics for all LLM calls."""
+
     total_calls: int = 0
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_tokens: int = 0
     total_latency_ms: float = 0.0
-    models: Dict[str, Dict[str, float]] = field(default_factory=dict)  # model -> {tokens, latency, calls}
+    models: dict[str, dict[str, float]] = field(default_factory=dict)  # model -> {tokens, latency, calls}
 
     def add(self, usage: LLMUsage) -> None:
         """Add a usage record."""
@@ -51,7 +90,13 @@ class AggregateUsage:
 
         # Track by model
         if usage.model not in self.models:
-            self.models[usage.model] = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "latency_ms": 0.0, "calls": 0}
+            self.models[usage.model] = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "latency_ms": 0.0,
+                "calls": 0,
+            }
         self.models[usage.model]["input_tokens"] += usage.input_tokens
         self.models[usage.model]["output_tokens"] += usage.output_tokens
         self.models[usage.model]["total_tokens"] += usage.total_tokens
@@ -75,49 +120,7 @@ class AggregateUsage:
 _usage = AggregateUsage()
 
 
-from analyzer import parse_phase1_response
-from changelog import build_changelog_prompt, build_retry_prompt, filter_changes, generate_changelog
-from config import AudienceConfig, ChangelogConfig
-from context_loader import ContextResult, detect_staleness, load_context_files
-from diff_analyzer import DiffAnalysisResult, analyze_diffs
-from content_scanner import (
-    ValidationMode,
-    handle_scan_result,
-    parse_validation_mode,
-    sanitize_content,
-    scan_content_override,
-    truncate_for_context,
-    validate_response,
-    validate_with_llm,
-)
-from flatten import flatten_changes
-from input_validation import validate_inputs
-from map_reduce import determine_version_from_changes, process_large_input
-from model_config import ModelConfig
-from models import AnalysisResult, Change, ChangeStats, ReleaseMetadata
-from output_sanitizer import sanitize_changelog
-from project_profile import ProjectProfile, resolve_project_profile
-from prompt_builder import (
-    CommitInfo,
-    build_prompt,
-    build_semantic_analysis_prompt,
-    get_commits,
-    has_breaking_change,
-    sanitize_message,
-)
-from repo_url import get_repository_url
-from text_splitter import needs_chunking
-from validation import (
-    ValidationConfig,
-    ValidationResult,
-    generate_fallback_changelog,
-    truncate_to_length,
-    validate_changelog,
-)
-from version import SemanticVersion, detect_latest_tag, is_shallow_clone, parse_version
-
-
-def get_env(name: str, default: Optional[str] = None) -> str:
+def get_env(name: str, default: str | None = None) -> str:
     """Get environment variable or raise error if missing and no default."""
     value = os.environ.get(name, default)
     if value is None:
@@ -153,7 +156,7 @@ def get_env_float(name: str, default: float) -> float:
         raise ValueError(f"Invalid float value for {name}: {value}") from e
 
 
-def get_env_optional_float(name: str, default: Optional[float]) -> Optional[float]:
+def get_env_optional_float(name: str, default: float | None) -> float | None:
     """Get environment variable as float, treating an empty value as unset.
 
     An explicitly empty input means "omit this parameter", so the request only
@@ -170,7 +173,7 @@ def get_env_optional_float(name: str, default: Optional[float]) -> Optional[floa
         raise ValueError(f"Invalid float value for {name}: {value}") from e
 
 
-def parse_extra_llm_params(raw: str) -> Optional[Dict[str, Any]]:
+def parse_extra_llm_params(raw: str) -> dict[str, Any] | None:
     """Parse the extra_llm_params input into a kwargs dict.
 
     Args:
@@ -189,9 +192,7 @@ def parse_extra_llm_params(raw: str) -> Optional[Dict[str, Any]]:
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in extra_llm_params: {e}") from e
     if not isinstance(parsed, dict):
-        raise ValueError(
-            f"extra_llm_params must be a JSON object, got {type(parsed).__name__}"
-        )
+        raise ValueError(f"extra_llm_params must be a JSON object, got {type(parsed).__name__}")
     return parsed
 
 
@@ -234,7 +235,7 @@ def set_output(name: str, value: str) -> None:
         print(f"OUTPUT {name}={preview}")
 
 
-THINKING_PARAMS: Dict[str, Dict[str, str]] = {
+THINKING_PARAMS: dict[str, dict[str, str]] = {
     "adaptive": {"type": "adaptive"},
     "off": {"type": "disabled"},
 }
@@ -243,12 +244,12 @@ THINKING_PARAMS: Dict[str, Dict[str, str]] = {
 def build_completion_kwargs(
     model: str,
     prompt: str,
-    temperature: Optional[float],
+    temperature: float | None,
     max_tokens: int,
     timeout: int,
     thinking: str = "",
-    extra_params: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    extra_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build the kwargs for a litellm.completion call.
 
     Parameters are passed through as configured: the action does not decide
@@ -267,7 +268,7 @@ def build_completion_kwargs(
     Returns:
         Keyword arguments for litellm.completion
     """
-    kwargs: Dict[str, Any] = {
+    kwargs: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
@@ -289,14 +290,14 @@ def build_completion_kwargs(
 def call_llm_with_retry(
     model: str,
     prompt: str,
-    temperature: Optional[float],
+    temperature: float | None,
     max_tokens: int,
     timeout: int,
     max_retries: int = 3,
     debug: bool = False,
     thinking: str = "",
-    extra_params: Optional[Dict[str, Any]] = None,
-) -> Tuple[str, LLMUsage]:
+    extra_params: dict[str, Any] | None = None,
+) -> tuple[str, LLMUsage]:
     """Call LLM with exponential backoff retry.
 
     Returns:
@@ -345,7 +346,9 @@ def call_llm_with_retry(
             if debug:
                 log_group("Debug: Response")
                 print(result)
-                print(f"[Usage] {usage.input_tokens} in / {usage.output_tokens} out = {usage.total_tokens} total | {latency_ms:.0f}ms")
+                print(
+                    f"[Usage] {usage.input_tokens} in / {usage.output_tokens} out = {usage.total_tokens} total | {latency_ms:.0f}ms"
+                )
                 log_group_end()
 
             return result, usage
@@ -377,17 +380,16 @@ def call_llm_with_retry(
 
 
 def sanitize_changelogs(
-    changelogs: Dict[str, Dict[str, str]],
+    changelogs: dict[str, dict[str, str]],
     changelog_config: ChangelogConfig,
-) -> Dict[str, Dict[str, str]]:
+) -> dict[str, dict[str, str]]:
     """Size-limit every changelog, reducing HTML-format ones to the allowlist."""
-    sanitized: Dict[str, Dict[str, str]] = {}
+    sanitized: dict[str, dict[str, str]] = {}
     for audience_name, by_language in changelogs.items():
         audience = changelog_config.audiences.get(audience_name)
         output_format = audience.output_format if audience else "markdown"
         sanitized[audience_name] = {
-            language: sanitize_changelog(text, output_format=output_format)
-            for language, text in by_language.items()
+            language: sanitize_changelog(text, output_format=output_format) for language, text in by_language.items()
         }
     return sanitized
 
@@ -396,9 +398,9 @@ CHANGELOG_FILE_EXTENSIONS = {"markdown": "md", "html": "html", "plain": "txt"}
 
 
 def write_changelog_files(
-    changelogs: Dict[str, Dict[str, str]],
+    changelogs: dict[str, dict[str, str]],
     changelog_config: ChangelogConfig,
-) -> Dict[str, Dict[str, str]]:
+) -> dict[str, dict[str, str]]:
     """Write each changelog to its own file so later steps never handle the text in shell.
 
     Files go in a fresh directory under RUNNER_TEMP: outside the checkout, so
@@ -410,7 +412,7 @@ def write_changelog_files(
     base_dir = os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()
     out_dir = tempfile.mkdtemp(prefix="llm-release-action-", dir=base_dir)
 
-    paths: Dict[str, Dict[str, str]] = {}
+    paths: dict[str, dict[str, str]] = {}
     for audience_name, by_language in changelogs.items():
         audience = changelog_config.audiences.get(audience_name)
         output_format = audience.output_format if audience else "markdown"
@@ -426,7 +428,7 @@ def write_changelog_files(
     return paths
 
 
-def parse_commits_json(json_str: str) -> List[CommitInfo]:
+def parse_commits_json(json_str: str) -> list[CommitInfo]:
     """Parse commits from JSON format (for multi-repo mode).
 
     Args:
@@ -461,34 +463,36 @@ def parse_commits_json(json_str: str) -> List[CommitInfo]:
         if "repo" in item:
             commit_hash = f"[{item['repo']}] {commit_hash}"
 
-        commits.append(CommitInfo(
-            hash=commit_hash,
-            message=sanitize_message(message),
-            has_breaking_marker=has_breaking_change(message),
-        ))
+        commits.append(
+            CommitInfo(
+                hash=commit_hash,
+                message=sanitize_message(message),
+                has_breaking_marker=has_breaking_change(message),
+            )
+        )
 
     return commits
 
 
 def run_phase1(
     model: str,
-    commits: List[CommitInfo],
+    commits: list[CommitInfo],
     base_version: str,
-    content_override: Optional[str],
+    content_override: str | None,
     max_commits: int,
     include_diffs: str,
     head_ref: str,
-    temperature: Optional[float],
+    temperature: float | None,
     max_tokens: int,
     timeout: int,
     debug: bool,
     validation_mode: ValidationMode = ValidationMode.BOTH,
-    validation_model: Optional[str] = None,
-    context_content: Optional[str] = None,
-    diff_analysis_content: Optional[str] = None,
+    validation_model: str | None = None,
+    context_content: str | None = None,
+    diff_analysis_content: str | None = None,
     thinking: str = "",
-    extra_params: Optional[Dict[str, Any]] = None,
-    project_profile: Optional[ProjectProfile] = None,
+    extra_params: dict[str, Any] | None = None,
+    project_profile: ProjectProfile | None = None,
 ) -> AnalysisResult:
     """Run Phase 1: Semantic Analysis.
 
@@ -590,10 +594,7 @@ def run_phase1(
             handle_scan_result(scan_result)  # Raises on HIGH/CRITICAL
 
             # For MEDIUM threats, optionally do LLM validation (Layer 2)
-            if (
-                validation_mode == ValidationMode.BOTH
-                and scan_result.threat_level.value == "medium"
-            ):
+            if validation_mode == ValidationMode.BOTH and scan_result.threat_level.value == "medium":
                 print("MEDIUM threat detected, performing LLM validation...")
 
                 def llm_validation_caller(prompt: str) -> str:
@@ -611,9 +612,7 @@ def run_phase1(
 
                 is_injection = validate_with_llm(content_override, llm_validation_caller)
                 if is_injection:
-                    raise ValueError(
-                        "Content rejected: LLM validation detected prompt injection attempt"
-                    )
+                    raise ValueError("Content rejected: LLM validation detected prompt injection attempt")
                 print("LLM validation passed")
 
             if scan_result.truncated:
@@ -637,9 +636,7 @@ def run_phase1(
 
             is_injection = validate_with_llm(content_override, llm_validation_caller)
             if is_injection:
-                raise ValueError(
-                    "Content rejected: LLM validation detected prompt injection attempt"
-                )
+                raise ValueError("Content rejected: LLM validation detected prompt injection attempt")
             print("LLM validation passed")
         # ValidationMode.NONE - skip all validation
 
@@ -679,10 +676,7 @@ def run_phase1(
             print("Phase 0: Flattening commits to net state...")
 
             # Format commits as text for flatten
-            commits_text = "\n".join(
-                f"{i + 1}. {c.hash}: {c.message}"
-                for i, c in enumerate(commits)
-            )
+            commits_text = "\n".join(f"{i + 1}. {c.hash}: {c.message}" for i, c in enumerate(commits))
 
             def flatten_llm_caller(prompt: str) -> str:
                 response, _ = call_llm_with_retry(
@@ -786,7 +780,7 @@ def run_phase1(
 def validate_audience_changelog(
     changelog: str,
     language: str,
-    changes: List[Change],
+    changes: list[Change],
     config: AudienceConfig,
 ) -> ValidationResult:
     """Validate a generated changelog against its audience's validation config."""
@@ -807,18 +801,18 @@ def get_default_preset(project_type: str) -> str:
 
 def run_phase2(
     model: str,
-    changes: List[Change],
+    changes: list[Change],
     changelog_config: ChangelogConfig,
     version: str,
-    base_url: Optional[str],
-    temperature: Optional[float],
+    base_url: str | None,
+    temperature: float | None,
     max_tokens: int,
     timeout: int,
     debug: bool,
     thinking: str = "",
-    extra_params: Optional[Dict[str, Any]] = None,
+    extra_params: dict[str, Any] | None = None,
     project_type: str = "generic",
-) -> tuple[Dict[str, Dict[str, str]], Dict[str, Dict[str, dict]]]:
+) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, dict]]]:
     """Run Phase 2: Changelog Generation (parallel execution).
 
     Args:
@@ -838,8 +832,8 @@ def run_phase2(
     """
     log_group("Phase 2: Changelog Generation")
 
-    changelogs: Dict[str, Dict[str, str]] = {}
-    metadata: Dict[str, Dict[str, dict]] = {}
+    changelogs: dict[str, dict[str, str]] = {}
+    metadata: dict[str, dict[str, dict]] = {}
 
     if not changelog_config.audiences:
         # Create default audience when no config provided. End-user apps get
@@ -852,9 +846,8 @@ default:
   languages: [en]
 """)
 
-
     # Build list of all tasks to run in parallel
-    tasks: List[Tuple[str, str, AudienceConfig, List[Change], str, Optional[str]]] = []
+    tasks: list[tuple[str, str, AudienceConfig, list[Change], str, str | None]] = []
 
     for audience_name, config in changelog_config.audiences.items():
         changelogs[audience_name] = {}
@@ -871,7 +864,9 @@ default:
         log_group_end()
         return changelogs, metadata
 
-    def process_task(task: Tuple[str, str, AudienceConfig, List[Change], str, Optional[str]]) -> Tuple[str, str, str, dict]:
+    def process_task(
+        task: tuple[str, str, AudienceConfig, list[Change], str, str | None],
+    ) -> tuple[str, str, str, dict]:
         """Process a single audience/language task."""
         audience_name, language, config, filtered_changes, ver, task_base_url = task
 
@@ -890,7 +885,7 @@ default:
             base_url=task_base_url,
         )
 
-        def generate(task_prompt: str) -> Tuple[str, ReleaseMetadata]:
+        def generate(task_prompt: str) -> tuple[str, ReleaseMetadata]:
             response, _ = call_llm_with_retry(
                 model=model,
                 prompt=task_prompt,
@@ -980,11 +975,11 @@ def parse_phase2_response(
 
 
 def run_phase3(
-    changelogs: Dict[str, Dict[str, str]],
-    changes: List[Change],
+    changelogs: dict[str, dict[str, str]],
+    changes: list[Change],
     changelog_config: ChangelogConfig,
     version: str,
-) -> Dict[str, Dict[str, str]]:
+) -> dict[str, dict[str, str]]:
     """Run Phase 3: Validation.
 
     Args:
@@ -998,7 +993,7 @@ def run_phase3(
     """
     log_group("Phase 3: Validation")
 
-    validated: Dict[str, Dict[str, str]] = {}
+    validated: dict[str, dict[str, str]] = {}
 
     for audience_name, audience_changelogs in changelogs.items():
         validated[audience_name] = {}
@@ -1025,7 +1020,7 @@ def run_phase3(
                     log_warning(f"Validation warnings for {audience_name}.{language}: {result.errors}")
                     validated[audience_name][language] = changelog
                 elif validation_config.on_failure == "fallback":
-                    print(f"  Using fallback changelog")
+                    print("  Using fallback changelog")
                     validated[audience_name][language] = generate_fallback_changelog(
                         version=version,
                         changes=changes,
@@ -1088,7 +1083,7 @@ def main() -> int:
         analyze_diffs_enabled = get_env_bool("INPUT_ANALYZE_DIFFS", False)
         diff_exclude_patterns = os.environ.get(
             "INPUT_DIFF_EXCLUDE_PATTERNS",
-            "**/*.lock,**/package-lock.json,**/yarn.lock,**/pnpm-lock.yaml,**/*.min.js,**/*.min.css"
+            "**/*.lock,**/package-lock.json,**/yarn.lock,**/pnpm-lock.yaml,**/*.min.js,**/*.min.css",
         )
         diff_max_files = get_env_int("INPUT_DIFF_MAX_FILES", 50)
         diff_max_total_lines = get_env_int("INPUT_DIFF_MAX_TOTAL_LINES", 5000)
@@ -1142,7 +1137,7 @@ def main() -> int:
 
         # Determine content source
         use_content_override = bool(content_override.strip())
-        commits: List[CommitInfo] = []
+        commits: list[CommitInfo] = []
 
         if use_content_override:
             log_group("Using content override")
@@ -1191,7 +1186,7 @@ def main() -> int:
         base_url = get_repository_url()
 
         # Initialize warnings collection
-        all_warnings: List[str] = []
+        all_warnings: list[str] = []
 
         # === Project Profile ===
         log_group("Project profile")
@@ -1234,8 +1229,8 @@ def main() -> int:
         log_group_end()
 
         # === Load Context Files ===
-        context_content: Optional[str] = None
-        context_result: Optional[ContextResult] = None
+        context_content: str | None = None
+        context_result: ContextResult | None = None
 
         if context_files_patterns.strip():
             log_group("Loading context files")
@@ -1277,7 +1272,7 @@ def main() -> int:
             log_group_end()
 
         # === Diff Analysis (structured) ===
-        diff_analysis_content: Optional[str] = None
+        diff_analysis_content: str | None = None
 
         if analyze_diffs_enabled and not use_content_override:
             log_group("Analyzing diffs (structured)")
@@ -1285,6 +1280,7 @@ def main() -> int:
             # Get raw diff from git
             try:
                 import subprocess
+
                 diff_result = subprocess.run(
                     ["git", "diff", str(current_version), head_ref],
                     capture_output=True,
@@ -1360,6 +1356,7 @@ def main() -> int:
             # Get list of changed files from git
             try:
                 import subprocess
+
                 result = subprocess.run(
                     ["git", "diff", "--name-only", str(current_version), head_ref],
                     capture_output=True,
@@ -1443,10 +1440,7 @@ def main() -> int:
         set_output("stats", json.dumps(stats.to_dict()))
 
         # Breaking changes (legacy format)
-        breaking = [
-            c.title for c in analysis_result.changes
-            if c.breaking is not None
-        ]
+        breaking = [c.title for c in analysis_result.changes if c.breaking is not None]
         set_output("breaking_changes", json.dumps(breaking))
 
         # Warnings (context staleness, etc.)
@@ -1466,6 +1460,7 @@ def main() -> int:
         log_error(str(e))
         if debug:
             import traceback
+
             traceback.print_exc()
         return 1
 
@@ -1476,7 +1471,9 @@ def main() -> int:
             print()
             print("=== LLM Usage (tokens consumed before exit) ===")
             for model, stats in _usage.models.items():
-                print(f"  {model}: {int(stats['calls'])} calls, {int(stats['input_tokens']):,}+{int(stats['output_tokens']):,} tokens, {stats['latency_ms']:.0f}ms")
+                print(
+                    f"  {model}: {int(stats['calls'])} calls, {int(stats['input_tokens']):,}+{int(stats['output_tokens']):,} tokens, {stats['latency_ms']:.0f}ms"
+                )
         else:
             print()
             print("=== LLM Usage: No LLM calls were made ===")

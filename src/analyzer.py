@@ -5,7 +5,6 @@ XML-style delimiters that work reliably across different LLM providers.
 """
 
 import re
-from typing import Dict, List, Optional, Tuple
 
 from models import (
     AnalysisResult,
@@ -13,10 +12,8 @@ from models import (
     Change,
     ChangeCategory,
     ChangeGroup,
-    ChangeStats,
     Importance,
 )
-
 
 # Valid bump types
 VALID_BUMPS = frozenset({"major", "minor", "patch"})
@@ -44,7 +41,7 @@ IMPORTANCE_MAP = {
 }
 
 
-def extract_tag_content(response: str, tag: str) -> Optional[str]:
+def extract_tag_content(response: str, tag: str) -> str | None:
     """Extract content between XML-style tags.
 
     Args:
@@ -78,13 +75,11 @@ def validate_bump(bump: str) -> str:
 
     bump_lower = bump.lower().strip()
     if bump_lower not in VALID_BUMPS:
-        raise ValueError(
-            f"Invalid bump type: '{bump}'. Must be 'major', 'minor', or 'patch'."
-        )
+        raise ValueError(f"Invalid bump type: '{bump}'. Must be 'major', 'minor', or 'patch'.")
     return bump_lower
 
 
-def parse_stats(stats_content: str) -> Dict[str, int]:
+def parse_stats(stats_content: str) -> dict[str, int]:
     """Parse the STATS section.
 
     Args:
@@ -111,7 +106,7 @@ def parse_stats(stats_content: str) -> Dict[str, int]:
     return stats
 
 
-def parse_breaking_change(line: str) -> Optional[BreakingInfo]:
+def parse_breaking_change(line: str) -> BreakingInfo | None:
     """Parse a breaking change line.
 
     Format: - [severity:high|medium|low] Description
@@ -141,7 +136,7 @@ def parse_breaking_change(line: str) -> Optional[BreakingInfo]:
     )
 
 
-def parse_change_line(line: str, index: int) -> Optional[Change]:
+def parse_change_line(line: str, index: int) -> Change | None:
     """Parse a single change line from the CHANGES section.
 
     Format: [category|importance] Title | Description | commits:sha1,sha2
@@ -186,8 +181,8 @@ def parse_change_line(line: str, index: int) -> Optional[Change]:
 
     title = parts[0] if parts else "Untitled change"
     description = ""
-    commits: List[str] = []
-    breaking_info: Optional[BreakingInfo] = None
+    commits: list[str] = []
+    breaking_info: BreakingInfo | None = None
 
     for part in parts[1:]:
         part = part.strip()
@@ -225,7 +220,7 @@ def parse_change_line(line: str, index: int) -> Optional[Change]:
     )
 
 
-def parse_changes_section(content: str) -> List[Change]:
+def parse_changes_section(content: str) -> list[Change]:
     """Parse the CHANGES section into Change objects.
 
     Args:
@@ -250,7 +245,7 @@ def parse_changes_section(content: str) -> List[Change]:
     return changes
 
 
-def parse_breaking_section(content: str, existing_changes: List[Change]) -> List[Change]:
+def parse_breaking_section(content: str, existing_changes: list[Change]) -> list[Change]:
     """Parse BREAKING_CHANGES section and update/add to changes.
 
     Args:
@@ -261,12 +256,10 @@ def parse_breaking_section(content: str, existing_changes: List[Change]) -> List
         Updated list of changes with breaking info
     """
     # Create a set of existing breaking change titles for deduplication
-    breaking_titles = {
-        c.title.lower() for c in existing_changes if c.breaking is not None
-    }
+    breaking_titles = {c.title.lower() for c in existing_changes if c.breaking is not None}
 
     new_changes = []
-    current_breaking: Optional[BreakingInfo] = None
+    current_breaking: BreakingInfo | None = None
     current_description = ""
 
     for line in content.split("\n"):
@@ -286,16 +279,18 @@ def parse_breaking_section(content: str, existing_changes: List[Change]) -> List
             # Save previous if exists
             if current_breaking and current_description:
                 if current_description.lower() not in breaking_titles:
-                    new_changes.append(Change(
-                        id=f"breaking-{len(new_changes)}",
-                        category=ChangeCategory.BREAKING,
-                        title=current_description,
-                        description="",
-                        commits=[],
-                        authors=[],
-                        importance=Importance.HIGH,
-                        breaking=current_breaking,
-                    ))
+                    new_changes.append(
+                        Change(
+                            id=f"breaking-{len(new_changes)}",
+                            category=ChangeCategory.BREAKING,
+                            title=current_description,
+                            description="",
+                            commits=[],
+                            authors=[],
+                            importance=Importance.HIGH,
+                            breaking=current_breaking,
+                        )
+                    )
 
             current_breaking = parse_breaking_change(line)
             current_description = line.lstrip("-* ").strip()
@@ -305,21 +300,23 @@ def parse_breaking_section(content: str, existing_changes: List[Change]) -> List
     # Don't forget the last one
     if current_breaking and current_description:
         if current_description.lower() not in breaking_titles:
-            new_changes.append(Change(
-                id=f"breaking-{len(new_changes)}",
-                category=ChangeCategory.BREAKING,
-                title=current_description,
-                description="",
-                commits=[],
-                authors=[],
-                importance=Importance.HIGH,
-                breaking=current_breaking,
-            ))
+            new_changes.append(
+                Change(
+                    id=f"breaking-{len(new_changes)}",
+                    category=ChangeCategory.BREAKING,
+                    title=current_description,
+                    description="",
+                    commits=[],
+                    authors=[],
+                    importance=Importance.HIGH,
+                    breaking=current_breaking,
+                )
+            )
 
     return existing_changes + new_changes
 
 
-def parse_list_items(content: str) -> List[str]:
+def parse_list_items(content: str) -> list[str]:
     """Parse markdown list items from content.
 
     Args:
@@ -388,6 +385,7 @@ def parse_phase1_response(response: str) -> AnalysisResult:
 # Grouping utilities (unchanged from before)
 # =============================================================================
 
+
 def _word_tokenize(text: str) -> set:
     """Simple word tokenization for similarity comparison."""
     words = re.sub(r"[^\w\s]", " ", text.lower()).split()
@@ -409,7 +407,7 @@ def _calculate_title_similarity(title1: str, title2: str) -> float:
     return intersection / union if union > 0 else 0.0
 
 
-def group_related_changes(changes: List[Change]) -> List[ChangeGroup]:
+def group_related_changes(changes: list[Change]) -> list[ChangeGroup]:
     """Group related changes by detecting common themes.
 
     Uses simple heuristics:
@@ -427,7 +425,7 @@ def group_related_changes(changes: List[Change]) -> List[ChangeGroup]:
         return []
 
     assigned = set()
-    groups: List[ChangeGroup] = []
+    groups: list[ChangeGroup] = []
 
     for i, change in enumerate(changes):
         if i in assigned:

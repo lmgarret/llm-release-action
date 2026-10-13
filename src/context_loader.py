@@ -13,14 +13,14 @@ Features:
 """
 
 import os
-import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, List, Optional, Set
 
 import pathspec
 from pathspec.patterns.gitignore.spec import GitIgnoreSpecPattern
 
+from summarizing_map_reduce import estimate_tokens, fits_budget, summarize_context
 
 # Default exclusions for common directories that shouldn't be included in context
 # These are always excluded unless explicitly included with a positive pattern
@@ -89,19 +89,18 @@ DEFAULT_EXCLUSIONS = [
     "!**/.tmp/**",
 ]
 
-from summarizing_map_reduce import SummarizeResult, summarize_context, estimate_tokens, fits_budget
-
 
 @dataclass
 class ContextResult:
     """Result of loading context files."""
+
     content: str
-    files_loaded: List[str]
+    files_loaded: list[str]
     was_summarized: bool
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
-def parse_patterns(patterns_str: str) -> List[str]:
+def parse_patterns(patterns_str: str) -> list[str]:
     """Parse comma-separated patterns string.
 
     Args:
@@ -116,7 +115,7 @@ def parse_patterns(patterns_str: str) -> List[str]:
     return [p.strip() for p in patterns_str.split(",") if p.strip()]
 
 
-def find_matching_files(patterns: List[str], root_dir: str = ".") -> List[str]:
+def find_matching_files(patterns: list[str], root_dir: str = ".") -> list[str]:
     """Find files matching gitignore-style patterns.
 
     Args:
@@ -138,7 +137,7 @@ def find_matching_files(patterns: List[str], root_dir: str = ".") -> List[str]:
     negative_spec = pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, negative_patterns) if negative_patterns else None
 
     # Walk directory and find matches
-    matches: List[str] = []
+    matches: list[str] = []
     root = Path(root_dir)
 
     for path in root.rglob("*"):
@@ -162,10 +161,10 @@ def find_matching_files(patterns: List[str], root_dir: str = ".") -> List[str]:
 
 
 def read_and_concatenate(
-    files: List[str],
+    files: list[str],
     root_dir: str = ".",
-    max_tokens: Optional[int] = None,
-) -> tuple[str, List[str], List[str]]:
+    max_tokens: int | None = None,
+) -> tuple[str, list[str], list[str]]:
     """Read files and concatenate with headers.
 
     Args:
@@ -176,16 +175,16 @@ def read_and_concatenate(
     Returns:
         Tuple of (content, files_loaded, warnings).
     """
-    content_parts: List[str] = []
-    files_loaded: List[str] = []
-    warnings: List[str] = []
+    content_parts: list[str] = []
+    files_loaded: list[str] = []
+    warnings: list[str] = []
     current_tokens = 0
 
     for file_path in files:
         full_path = os.path.join(root_dir, file_path)
 
         try:
-            with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(full_path, encoding="utf-8", errors="replace") as f:
                 file_content = f.read()
 
             # Check if adding this file would exceed budget (if budget specified)
@@ -209,7 +208,7 @@ def read_and_concatenate(
 def load_context_files(
     patterns: str,
     max_tokens: int = 800,
-    llm_caller: Optional[Callable[[str], str]] = None,
+    llm_caller: Callable[[str], str] | None = None,
     root_dir: str = ".",
     include_default_exclusions: bool = True,
 ) -> ContextResult:
@@ -230,7 +229,7 @@ def load_context_files(
     Returns:
         ContextResult with content and metadata.
     """
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     # Parse patterns
     pattern_list = parse_patterns(patterns)
@@ -283,9 +282,7 @@ def load_context_files(
         result = summarize_context(content, max_tokens, llm_caller)
         warnings.extend(result.warnings)
         if result.was_summarized:
-            warnings.append(
-                f"Context summarized from ~{result.original_tokens} to ~{result.final_tokens} tokens"
-            )
+            warnings.append(f"Context summarized from ~{result.original_tokens} to ~{result.final_tokens} tokens")
         return ContextResult(
             content=result.content,
             files_loaded=files_loaded,
@@ -297,9 +294,7 @@ def load_context_files(
         max_chars = max_tokens * 4
         truncated = content[:max_chars]
         original_tokens = estimate_tokens(content)
-        warnings.append(
-            f"Context truncated from ~{original_tokens} to ~{max_tokens} tokens (no LLM for summarization)"
-        )
+        warnings.append(f"Context truncated from ~{original_tokens} to ~{max_tokens} tokens (no LLM for summarization)")
         return ContextResult(
             content=truncated,
             files_loaded=files_loaded,
@@ -310,8 +305,8 @@ def load_context_files(
 
 def detect_staleness(
     context: str,
-    changed_files: List[str],
-) -> List[str]:
+    changed_files: list[str],
+) -> list[str]:
     """Detect if context might be stale based on changed files.
 
     Looks for files/directories in changed_files that aren't mentioned
@@ -324,7 +319,7 @@ def detect_staleness(
     Returns:
         List of warnings about potentially stale context.
     """
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     if not context or not changed_files:
         return warnings
@@ -333,7 +328,7 @@ def detect_staleness(
     context_lower = context.lower()
 
     # Extract unique directory prefixes from changed files
-    undocumented_areas: Set[str] = set()
+    undocumented_areas: set[str] = set()
 
     for file_path in changed_files:
         # Check if the file or its directory is mentioned in context
@@ -361,8 +356,7 @@ def detect_staleness(
         if len(undocumented_areas) > 5:
             areas_str += f" (+{len(undocumented_areas) - 5} more)"
         warnings.append(
-            f"Changes detected in areas not covered by context: {areas_str}. "
-            "Consider updating your context files."
+            f"Changes detected in areas not covered by context: {areas_str}. Consider updating your context files."
         )
 
     return warnings

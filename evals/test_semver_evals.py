@@ -6,16 +6,16 @@ Run with: PYTHONPATH=src pytest evals/ -v -m eval
 Requires AWS credentials configured for Bedrock access.
 """
 
-import pytest
 import litellm
+import pytest
+from conftest import completion_kwargs, get_eval_model, get_test_model
 from deepeval import assert_test
-from deepeval.test_case import LLMTestCase, SingleTurnParams
 from deepeval.metrics import GEval
 from deepeval.models import DeepEvalBaseLLM
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 
-from prompt_builder import build_semantic_analysis_prompt, CommitInfo
 from analyzer import parse_phase1_response
-from conftest import get_test_model, get_eval_model, completion_kwargs
+from prompt_builder import CommitInfo, build_semantic_analysis_prompt
 
 pytestmark = [
     pytest.mark.eval,
@@ -96,6 +96,7 @@ MIXED_COMMITS = [
 # =============================================================================
 # Version Bump Detection Evals
 # =============================================================================
+
 
 class TestVersionBumpEvals:
     """Evaluate version bump detection accuracy."""
@@ -203,6 +204,7 @@ class TestVersionBumpEvals:
 # Changelog Quality Evals
 # =============================================================================
 
+
 class TestChangelogQualityEvals:
     """Evaluate changelog generation quality."""
 
@@ -220,10 +222,10 @@ class TestChangelogQualityEvals:
         # Check changelog contains key terms
         changelog_lower = result.changelog.lower()
 
-        assert "dark mode" in changelog_lower or "theme" in changelog_lower, \
+        assert "dark mode" in changelog_lower or "theme" in changelog_lower, (
             "Changelog should mention dark mode feature"
-        assert "csv" in changelog_lower or "export" in changelog_lower, \
-            "Changelog should mention export feature"
+        )
+        assert "csv" in changelog_lower or "export" in changelog_lower, "Changelog should mention export feature"
 
         test_case = LLMTestCase(
             input=prompt,
@@ -280,6 +282,7 @@ class TestChangelogQualityEvals:
 # Breaking Change Detection Evals
 # =============================================================================
 
+
 class TestBreakingChangeEvals:
     """Evaluate breaking change detection accuracy."""
 
@@ -303,8 +306,7 @@ class TestBreakingChangeEvals:
 
         # Check that breaking changes are mentioned
         response_lower = response.lower()
-        assert "breaking" in response_lower or "remove" in response_lower, \
-            "Response should mention breaking change"
+        assert "breaking" in response_lower or "remove" in response_lower, "Response should mention breaking change"
 
     def test_detects_schema_change(self):
         """Test detection of database schema changes."""
@@ -323,8 +325,7 @@ class TestBreakingChangeEvals:
         result = parse_phase1_response(response)
 
         # Schema changes should be at least minor, possibly major
-        assert result.bump in ["minor", "major"], \
-            f"Schema change should trigger minor or major bump, got {result.bump}"
+        assert result.bump in ["minor", "major"], f"Schema change should trigger minor or major bump, got {result.bump}"
 
     def test_detects_config_change(self):
         """Test detection of configuration format changes."""
@@ -349,6 +350,7 @@ class TestBreakingChangeEvals:
 # =============================================================================
 # XML Parsing Robustness Evals
 # =============================================================================
+
 
 class TestParsingRobustnessEvals:
     """Evaluate that XML parsing handles various LLM response formats."""
@@ -388,6 +390,7 @@ class TestParsingRobustnessEvals:
 # Adaptive Detail Level Evals
 # =============================================================================
 
+
 class TestAdaptiveDetailEvals:
     """Evaluate that detail level adapts to commit count."""
 
@@ -402,16 +405,12 @@ class TestAdaptiveDetailEvals:
         )
 
         # Prompt should mention "SMALL release"
-        assert "SMALL release" in prompt or "DETAILED" in prompt, \
-            "Small release should request detailed output"
+        assert "SMALL release" in prompt or "DETAILED" in prompt, "Small release should request detailed output"
 
     def test_large_release_summarized(self):
         """Test that large releases get summarized output."""
         # Create 150 commits
-        commits = [
-            CommitInfo(hash=f"hash{i:03d}", message=f"Commit {i}: Some change")
-            for i in range(150)
-        ]
+        commits = [CommitInfo(hash=f"hash{i:03d}", message=f"Commit {i}: Some change") for i in range(150)]
 
         prompt = build_semantic_analysis_prompt(
             commits=commits,
@@ -419,5 +418,4 @@ class TestAdaptiveDetailEvals:
         )
 
         # Prompt should mention "LARGE release"
-        assert "LARGE release" in prompt or "HIGH IMPACT" in prompt, \
-            "Large release should request summarized output"
+        assert "LARGE release" in prompt or "HIGH IMPACT" in prompt, "Large release should request summarized output"

@@ -1,6 +1,6 @@
 """Preset configurations for different audiences."""
 
-from typing import Any, Dict
+from typing import Any
 
 # All valid sections
 VALID_SECTIONS = {
@@ -26,7 +26,7 @@ VALID_TONES = {"formal", "casual", "professional", "excited", "friendly"}
 VALID_OUTPUT_FORMATS = {"markdown", "html", "json", "plain"}
 
 # Developer preset - full technical changelog
-DEVELOPER: Dict[str, Any] = {
+DEVELOPER: dict[str, Any] = {
     "languages": ["en"],
     "sections": [
         "breaking",
@@ -62,7 +62,7 @@ DEVELOPER: Dict[str, Any] = {
 }
 
 # Customer preset - user-facing changes
-CUSTOMER: Dict[str, Any] = {
+CUSTOMER: dict[str, Any] = {
     "languages": ["en"],
     "sections": ["breaking", "features", "improvements", "fixes"],
     "include_commits": False,
@@ -87,7 +87,7 @@ CUSTOMER: Dict[str, Any] = {
 }
 
 # Executive preset - business summary
-EXECUTIVE: Dict[str, Any] = {
+EXECUTIVE: dict[str, Any] = {
     "languages": ["en"],
     "sections": ["breaking", "features"],
     "include_commits": False,
@@ -113,7 +113,7 @@ EXECUTIVE: Dict[str, Any] = {
 }
 
 # Marketing preset - promotional copy
-MARKETING: Dict[str, Any] = {
+MARKETING: dict[str, Any] = {
     "languages": ["en"],
     "sections": ["features", "improvements"],
     "include_commits": False,
@@ -138,7 +138,7 @@ MARKETING: Dict[str, Any] = {
 }
 
 # Security preset - security-focused
-SECURITY: Dict[str, Any] = {
+SECURITY: dict[str, Any] = {
     "languages": ["en"],
     "sections": ["security", "breaking", "fixes"],
     "include_commits": True,
@@ -162,7 +162,7 @@ SECURITY: Dict[str, Any] = {
 }
 
 # Ops preset - operations-focused
-OPS: Dict[str, Any] = {
+OPS: dict[str, Any] = {
     "languages": ["en"],
     "sections": ["breaking", "infrastructure", "performance", "security"],
     "include_commits": True,
@@ -188,7 +188,7 @@ OPS: Dict[str, Any] = {
 }
 
 # Preset mapping
-PRESETS: Dict[str, Dict[str, Any]] = {
+PRESETS: dict[str, dict[str, Any]] = {
     "developer": DEVELOPER,
     "customer": CUSTOMER,
     "executive": EXECUTIVE,
@@ -198,7 +198,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def get_preset(name: str) -> Dict[str, Any]:
+def get_preset(name: str) -> dict[str, Any]:
     """Get a preset configuration by name.
 
     Args:

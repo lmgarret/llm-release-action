@@ -8,15 +8,15 @@ These tests call the actual LLM and verify that:
 Run with: PYTHONPATH=src pytest evals/test_flatten_evals.py -v -m eval
 """
 
-import pytest
 import litellm
+import pytest
+from conftest import completion_kwargs, get_eval_model, get_test_model
 from deepeval import assert_test
-from deepeval.test_case import LLMTestCase, SingleTurnParams
 from deepeval.metrics import GEval
 from deepeval.models import DeepEvalBaseLLM
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 
-from flatten import flatten_changes, flatten_changes_to_list, FLATTEN_PROMPT
-from conftest import get_test_model, get_eval_model, completion_kwargs
+from flatten import flatten_changes, flatten_changes_to_list
 
 pytestmark = [
     pytest.mark.eval,
@@ -104,6 +104,7 @@ CHANGELOG_TEXT_INPUT = """## v1.0.0
 # Reverted Feature Detection Evals
 # =============================================================================
 
+
 class TestRevertedFeatureEvals:
     """Evaluate that reverted features are correctly excluded."""
 
@@ -113,16 +114,13 @@ class TestRevertedFeatureEvals:
         result_lower = result.lower()
 
         # Stripe should be excluded (it was reverted)
-        assert "stripe" not in result_lower, \
-            f"Stripe should be excluded (was reverted). Got: {result}"
+        assert "stripe" not in result_lower, f"Stripe should be excluded (was reverted). Got: {result}"
 
         # Payment should be excluded (related to reverted feature)
-        assert "payment" not in result_lower, \
-            f"Payment should be excluded (related to reverted). Got: {result}"
+        assert "payment" not in result_lower, f"Payment should be excluded (related to reverted). Got: {result}"
 
         # Dark mode should be included (not reverted)
-        assert "dark" in result_lower, \
-            f"Dark mode should be included. Got: {result}"
+        assert "dark" in result_lower, f"Dark mode should be included. Got: {result}"
 
         # Create DeepEval test case
         test_case = LLMTestCase(
@@ -154,8 +152,9 @@ class TestRevertedFeatureEvals:
         # Should have no caching-related changes
         caching_changes = [c for c in changes if "caching" in c.title.lower()]
 
-        assert len(caching_changes) == 0, \
+        assert len(caching_changes) == 0, (
             f"Caching should be excluded (all reverted). Got: {[c.title for c in changes]}"
+        )
 
         test_case = LLMTestCase(
             input=ALL_REVERTED_INPUT,
@@ -182,6 +181,7 @@ class TestRevertedFeatureEvals:
 # Consolidation Evals
 # =============================================================================
 
+
 class TestConsolidationEvals:
     """Evaluate that related changes are consolidated."""
 
@@ -190,13 +190,11 @@ class TestConsolidationEvals:
         changes = flatten_changes_to_list(RELATED_CHANGES_INPUT, call_llm)
 
         # Should have fewer entries than input commits (4)
-        assert len(changes) < 4, \
-            f"Related changes should be consolidated. Got {len(changes)} entries from 4 commits"
+        assert len(changes) < 4, f"Related changes should be consolidated. Got {len(changes)} entries from 4 commits"
 
         # All OAuth-related work should be represented
         all_titles = " ".join(c.title.lower() for c in changes)
-        assert "oauth" in all_titles, \
-            f"OAuth should be mentioned. Got: {[c.title for c in changes]}"
+        assert "oauth" in all_titles, f"OAuth should be mentioned. Got: {[c.title for c in changes]}"
 
         test_case = LLMTestCase(
             input=RELATED_CHANGES_INPUT,
@@ -224,6 +222,7 @@ class TestConsolidationEvals:
 # Content Override (Changelog Text) Evals
 # =============================================================================
 
+
 class TestContentOverrideEvals:
     """Evaluate that changelog text input works the same as commits."""
 
@@ -233,12 +232,14 @@ class TestContentOverrideEvals:
 
         # Caching should be excluded (added in v1.0.0, removed in v1.0.2)
         all_titles = " ".join(c.title.lower() for c in changes)
-        assert "caching" not in all_titles, \
+        assert "caching" not in all_titles, (
             f"Caching should be excluded (was removed). Got: {[c.title for c in changes]}"
+        )
 
         # OAuth should be included
-        assert "oauth" in all_titles or "auth" in all_titles, \
+        assert "oauth" in all_titles or "auth" in all_titles, (
             f"OAuth should be included. Got: {[c.title for c in changes]}"
+        )
 
         test_case = LLMTestCase(
             input=CHANGELOG_TEXT_INPUT,
@@ -266,6 +267,7 @@ class TestContentOverrideEvals:
 # Version Bump Accuracy Evals
 # =============================================================================
 
+
 class TestVersionBumpAfterFlattenEvals:
     """Evaluate that version bump is accurate after flattening."""
 
@@ -283,8 +285,7 @@ class TestVersionBumpAfterFlattenEvals:
         # But critically, Stripe (also a feature) should NOT influence the bump
         stripe_in_changes = any("stripe" in c.title.lower() for c in changes)
 
-        assert not stripe_in_changes, \
-            "Stripe should not be in changes (was reverted)"
+        assert not stripe_in_changes, "Stripe should not be in changes (was reverted)"
 
         # If only dark mode feature, bump should be minor
         if has_feature and not has_breaking:

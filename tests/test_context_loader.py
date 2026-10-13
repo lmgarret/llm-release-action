@@ -1,8 +1,7 @@
 """Tests for context_loader module."""
 
-import pytest
-import sys
 import os
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock
@@ -11,12 +10,12 @@ from unittest.mock import Mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from context_loader import (
-    parse_patterns,
-    find_matching_files,
-    read_and_concatenate,
-    load_context_files,
-    detect_staleness,
     ContextResult,
+    detect_staleness,
+    find_matching_files,
+    load_context_files,
+    parse_patterns,
+    read_and_concatenate,
 )
 
 
@@ -124,9 +123,7 @@ class TestReadAndConcatenate:
             (Path(tmpdir) / "README.md").write_text("# Main")
             (Path(tmpdir) / "ABOUT.md").write_text("# About")
 
-            content, files_loaded, warnings = read_and_concatenate(
-                ["README.md", "ABOUT.md"], tmpdir
-            )
+            content, files_loaded, warnings = read_and_concatenate(["README.md", "ABOUT.md"], tmpdir)
 
             assert "# README.md" in content
             assert "# ABOUT.md" in content
@@ -147,9 +144,7 @@ class TestReadAndConcatenate:
             (Path(tmpdir) / "large.md").write_text("x" * 1000)  # ~250 tokens
             (Path(tmpdir) / "small.md").write_text("y" * 100)  # ~25 tokens
 
-            content, files_loaded, warnings = read_and_concatenate(
-                ["large.md", "small.md"], tmpdir, max_tokens=50
-            )
+            content, files_loaded, warnings = read_and_concatenate(["large.md", "small.md"], tmpdir, max_tokens=50)
 
             # Should skip one file due to budget
             assert len(warnings) > 0
@@ -167,9 +162,7 @@ class TestLoadContextFiles:
 
     def test_no_matching_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = load_context_files(
-                "nonexistent*.md", max_tokens=800, root_dir=tmpdir
-            )
+            result = load_context_files("nonexistent*.md", max_tokens=800, root_dir=tmpdir)
             assert result.content == ""
             assert len(result.warnings) > 0
             assert "No files found" in result.warnings[0]
@@ -189,9 +182,7 @@ class TestLoadContextFiles:
             (Path(tmpdir) / "README.md").write_text("# Project")
             (Path(tmpdir) / "ARCHITECTURE.md").write_text("# Architecture")
 
-            result = load_context_files(
-                "README.md,ARCHITECTURE.md", max_tokens=800, root_dir=tmpdir
-            )
+            result = load_context_files("README.md,ARCHITECTURE.md", max_tokens=800, root_dir=tmpdir)
 
             assert "# README.md" in result.content
             assert "# ARCHITECTURE.md" in result.content
@@ -204,9 +195,7 @@ class TestLoadContextFiles:
 
             mock_llm = Mock(return_value="<SUMMARY>summarized content</SUMMARY>")
 
-            result = load_context_files(
-                "large.md", max_tokens=50, llm_caller=mock_llm, root_dir=tmpdir
-            )
+            result = load_context_files("large.md", max_tokens=50, llm_caller=mock_llm, root_dir=tmpdir)
 
             assert result.was_summarized is True
             assert "summarized content" in result.content
@@ -217,9 +206,7 @@ class TestLoadContextFiles:
             # Create large content that exceeds budget
             (Path(tmpdir) / "large.md").write_text("content " * 500)
 
-            result = load_context_files(
-                "large.md", max_tokens=50, llm_caller=None, root_dir=tmpdir
-            )
+            result = load_context_files("large.md", max_tokens=50, llm_caller=None, root_dir=tmpdir)
 
             assert result.was_summarized is False
             assert len(result.warnings) > 0
@@ -277,7 +264,7 @@ class TestDetectStaleness:
         changed_files = ["setup.py", "requirements.txt"]
 
         # Root files shouldn't trigger warnings (no area to report)
-        warnings = detect_staleness(context, changed_files)
+        detect_staleness(context, changed_files)
         # If all changes are in root, might not have warnings
         # Implementation skips files with no directory
 

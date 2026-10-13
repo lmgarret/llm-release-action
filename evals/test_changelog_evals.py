@@ -8,16 +8,16 @@ Run with: PYTHONPATH=src pytest evals/test_changelog_evals.py -v -m eval
 Requires AWS credentials configured for Bedrock access.
 """
 
-import pytest
 import litellm
+import pytest
+from conftest import completion_kwargs, get_eval_model, get_test_model
 from deepeval import assert_test
-from deepeval.test_case import LLMTestCase, SingleTurnParams
 from deepeval.metrics import GEval
 from deepeval.models import DeepEvalBaseLLM
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 
+from models import BreakingInfo, Change, ChangeCategory, Importance
 from prompts import Phase2Config, render_phase2_prompt
-from models import Change, ChangeCategory, Importance, BreakingInfo
-from conftest import get_test_model, get_eval_model, completion_kwargs
 
 pytestmark = [
     pytest.mark.eval,
@@ -145,6 +145,7 @@ SAMPLE_CHANGES = [
 # Audience-Specific Changelog Evals
 # =============================================================================
 
+
 class TestAudienceTransformationEvals:
     """Evaluate changelog transformation for different audiences."""
 
@@ -165,8 +166,7 @@ class TestAudienceTransformationEvals:
         # Should keep technical terms
         response_lower = response.lower()
         assert "api" in response_lower, "Developer changelog should mention API"
-        assert "v1" in response_lower or "v2" in response_lower, \
-            "Developer changelog should reference API versions"
+        assert "v1" in response_lower or "v2" in response_lower, "Developer changelog should reference API versions"
 
         test_case = LLMTestCase(
             input=prompt,
@@ -256,6 +256,7 @@ class TestAudienceTransformationEvals:
 # Language Transformation Evals
 # =============================================================================
 
+
 class TestLanguageTransformationEvals:
     """Evaluate changelog translation to different languages."""
 
@@ -312,7 +313,7 @@ class TestLanguageTransformationEvals:
         response = call_llm(prompt)
 
         # Should contain Japanese characters
-        has_japanese = any('\u3040' <= char <= '\u30ff' or '\u4e00' <= char <= '\u9fff' for char in response)
+        has_japanese = any("\u3040" <= char <= "\u30ff" or "\u4e00" <= char <= "\u9fff" for char in response)
 
         assert has_japanese, "Response should contain Japanese characters"
 
@@ -336,6 +337,7 @@ class TestLanguageTransformationEvals:
 # =============================================================================
 # Format and Tone Evals
 # =============================================================================
+
 
 class TestFormatAndToneEvals:
     """Evaluate output format and tone adherence."""
@@ -412,6 +414,7 @@ class TestFormatAndToneEvals:
 # =============================================================================
 # Breaking Change Formatting Evals
 # =============================================================================
+
 
 class TestBreakingChangeFormattingEvals:
     """Evaluate breaking change presentation."""

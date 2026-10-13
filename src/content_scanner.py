@@ -11,9 +11,9 @@ The module implements a layered defense:
 
 import base64
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, List, Optional
 
 from untrusted import normalize, wrap
 
@@ -42,7 +42,7 @@ class ScanResult:
     """Result of content scanning."""
 
     threat_level: ThreatLevel
-    issues: List[str]
+    issues: list[str]
     token_estimate: int
     truncated: bool
 
@@ -120,7 +120,7 @@ RESPONSE_INJECTION_INDICATORS = [
 # === CONTEXT WINDOW ATTACKS ===
 
 
-def detect_context_attacks(content: str) -> List[str]:
+def detect_context_attacks(content: str) -> list[str]:
     """Detect attempts to exhaust or manipulate context window.
 
     Args:
@@ -135,9 +135,7 @@ def detect_context_attacks(content: str) -> List[str]:
     # Find any pattern repeated more than 10 times
     for match in re.finditer(r"(.{10,}?)\1{10,}", content):
         repeat_count = len(match.group(0)) // len(match.group(1))
-        issues.append(
-            f"Excessive repetition detected: '{match.group(1)[:30]}...' repeated {repeat_count} times"
-        )
+        issues.append(f"Excessive repetition detected: '{match.group(1)[:30]}...' repeated {repeat_count} times")
 
     # Very long lines without breaks (context stuffing)
     for i, line in enumerate(content.split("\n")):
@@ -154,7 +152,7 @@ def detect_context_attacks(content: str) -> List[str]:
 # === ENCODING TRICKS ===
 
 
-def detect_encoding_tricks(content: str) -> List[str]:
+def detect_encoding_tricks(content: str) -> list[str]:
     """Detect encoding-based attacks.
 
     Args:
@@ -200,7 +198,7 @@ def detect_encoding_tricks(content: str) -> List[str]:
 # === FORMAT VALIDATION ===
 
 
-def validate_changelog_format(content: str) -> List[str]:
+def validate_changelog_format(content: str) -> list[str]:
     """Validate content looks like changelogs, not exploits.
 
     Args:
@@ -277,7 +275,7 @@ def scan_content_override(content: str) -> ScanResult:
     Returns:
         ScanResult with threat level, issues, and token estimate
     """
-    issues: List[str] = []
+    issues: list[str] = []
     threat_level = ThreatLevel.NONE
 
     # === Size checks ===
@@ -293,9 +291,7 @@ def scan_content_override(content: str) -> ScanResult:
     truncated = False
 
     if token_estimate > MAX_TOKENS:
-        issues.append(
-            f"Content estimated at {token_estimate} tokens, will be truncated to {MAX_TOKENS}"
-        )
+        issues.append(f"Content estimated at {token_estimate} tokens, will be truncated to {MAX_TOKENS}")
         truncated = True
         threat_level = ThreatLevel.LOW
 
@@ -361,7 +357,7 @@ def parse_changelog_sections(content: str) -> dict:
     """
     sections: dict = {}
     current_section = "other"
-    current_content: List[str] = []
+    current_content: list[str] = []
 
     section_keywords = {
         "breaking": ["breaking", "incompatible"],
@@ -406,7 +402,7 @@ def truncate_section(section: str, max_tokens: int) -> str:
         Truncated section
     """
     lines = section.split("\n")
-    result: List[str] = []
+    result: list[str] = []
     current_tokens = 0
 
     for line in lines:
@@ -441,7 +437,7 @@ def truncate_for_context(content: str, max_tokens: int = MAX_TOKENS) -> str:
 
     priority_order = ["breaking", "security", "feature", "fix", "other"]
 
-    result_parts: List[str] = []
+    result_parts: list[str] = []
     remaining_tokens = max_tokens
 
     for section_type in priority_order:
@@ -459,7 +455,7 @@ def truncate_for_context(content: str, max_tokens: int = MAX_TOKENS) -> str:
     return "\n\n".join(result_parts)
 
 
-def handle_scan_result(result: ScanResult, logger: Optional[object] = None) -> None:
+def handle_scan_result(result: ScanResult, logger: object | None = None) -> None:
     """Handle scan result based on threat level.
 
     HIGH and CRITICAL threats are now blocked (raise ValueError).
@@ -554,7 +550,7 @@ def validate_with_llm(
     return not (verdict and verdict.group(1) == "NO")
 
 
-def validate_response(response: str) -> List[str]:
+def validate_response(response: str) -> list[str]:
     """Validate LLM response for signs of successful injection.
 
     Check the LLM output for patterns that indicate the prompt injection
@@ -566,7 +562,7 @@ def validate_response(response: str) -> List[str]:
     Returns:
         List of detected issues (empty if clean)
     """
-    issues: List[str] = []
+    issues: list[str] = []
 
     for pattern in RESPONSE_INJECTION_INDICATORS:
         flags = re.MULTILINE if pattern.startswith("^") else 0
@@ -597,7 +593,6 @@ def parse_validation_mode(mode_str: str) -> ValidationMode:
     }
     if mode_lower not in valid_modes:
         raise ValueError(
-            f"Invalid validate_injections mode: '{mode_str}'. "
-            f"Valid values: {', '.join(valid_modes.keys())}"
+            f"Invalid validate_injections mode: '{mode_str}'. Valid values: {', '.join(valid_modes.keys())}"
         )
     return valid_modes[mode_lower]

@@ -2,7 +2,6 @@
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 
 @dataclass
@@ -11,13 +10,13 @@ class AnalysisResult:
 
     bump: str
     reasoning: str
-    breaking_changes: List[str] = field(default_factory=list)
-    features: List[str] = field(default_factory=list)
-    fixes: List[str] = field(default_factory=list)
+    breaking_changes: list[str] = field(default_factory=list)
+    features: list[str] = field(default_factory=list)
+    fixes: list[str] = field(default_factory=list)
     changelog: str = ""
 
 
-def extract_tag_content(response: str, tag: str) -> Optional[str]:
+def extract_tag_content(response: str, tag: str) -> str | None:
     """Extract content between XML-style tags.
 
     Args:
@@ -34,7 +33,7 @@ def extract_tag_content(response: str, tag: str) -> Optional[str]:
     return None
 
 
-def parse_list_items(content: str) -> List[str]:
+def parse_list_items(content: str) -> list[str]:
     """Parse markdown list items from content.
 
     Args:
@@ -70,9 +69,7 @@ def validate_bump(bump: str) -> str:
     """
     bump_lower = bump.lower().strip()
     if bump_lower not in ("major", "minor", "patch"):
-        raise ValueError(
-            f"Invalid bump type: '{bump}'. Must be exactly 'major', 'minor', or 'patch'."
-        )
+        raise ValueError(f"Invalid bump type: '{bump}'. Must be exactly 'major', 'minor', or 'patch'.")
     return bump_lower
 
 

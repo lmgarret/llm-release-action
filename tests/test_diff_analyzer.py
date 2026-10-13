@@ -1,27 +1,24 @@
 """Tests for diff_analyzer module."""
 
-import pytest
-import sys
 import os
+import sys
 from unittest.mock import Mock
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from diff_analyzer import (
-    parse_unified_diff,
-    filter_diffs,
-    get_file_priority,
-    prioritize_diffs,
-    limit_diffs,
-    format_diff_for_prompt,
-    extract_changes_from_diff,
-    analyze_diffs,
-    FileDiff,
     DiffAnalysisResult,
-    DIFF_MAP_PROMPT,
+    FileDiff,
+    analyze_diffs,
+    extract_changes_from_diff,
+    filter_diffs,
+    format_diff_for_prompt,
+    get_file_priority,
+    limit_diffs,
+    parse_unified_diff,
+    prioritize_diffs,
 )
-
 
 # Sample diffs for testing
 # Note: Using raw strings and explicit newlines to ensure proper formatting for unidiff
@@ -386,9 +383,7 @@ class TestLimitDiffs:
 
     def test_warnings_include_count_of_skipped_files(self):
         """Warnings include count of skipped files."""
-        diffs = [
-            FileDiff(path=f"file{i}.py", added_lines=["a"]) for i in range(10)
-        ]
+        diffs = [FileDiff(path=f"file{i}.py", added_lines=["a"]) for i in range(10)]
 
         kept, warnings = limit_diffs(diffs, max_files=3, max_lines=1000)
 

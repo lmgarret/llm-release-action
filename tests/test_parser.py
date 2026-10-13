@@ -1,13 +1,14 @@
 """Tests for parser.py module."""
 
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from parser import extract_tag_content, parse_list_items, validate_bump, parse_response
+from parser import extract_tag_content, parse_list_items, parse_response, validate_bump
 
 
 class TestExtractTagContent:

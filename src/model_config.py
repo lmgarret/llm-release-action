@@ -1,7 +1,6 @@
 """Per-phase model configuration."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -18,8 +17,8 @@ class ModelConfig:
     """
 
     default: str  # Default model used if phase-specific not set
-    analysis: Optional[str] = None  # Phase 1: version analysis
-    changelog: Optional[str] = None  # Phase 2: changelog generation
+    analysis: str | None = None  # Phase 1: version analysis
+    changelog: str | None = None  # Phase 2: changelog generation
 
     def get_analysis_model(self) -> str:
         """Get the model to use for Phase 1 (semantic analysis).
@@ -41,8 +40,8 @@ class ModelConfig:
     def from_env(
         cls,
         model: str,
-        model_analysis: Optional[str] = None,
-        model_changelog: Optional[str] = None,
+        model_analysis: str | None = None,
+        model_changelog: str | None = None,
     ) -> "ModelConfig":
         """Create ModelConfig from environment variables.
 

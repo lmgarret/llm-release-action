@@ -26,28 +26,26 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 import litellm
 
+from content_scanner import (
+    ThreatLevel,
+    ValidationMode,
+    handle_scan_result,
+    parse_validation_mode,
+    sanitize_content,
+    scan_content_override,
+    validate_response,
+    validate_with_llm,
+)
+
 # Skip all tests in this module if AWS credentials are not available
 HAS_AWS_CREDENTIALS = bool(os.environ.get("AWS_ACCESS_KEY_ID"))
 pytestmark = pytest.mark.skipif(
     not HAS_AWS_CREDENTIALS,
-    reason="AWS credentials not available. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN environment variables."
+    reason="AWS credentials not available. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN environment variables.",
 )
-from content_scanner import (
-    ValidationMode,
-    scan_content_override,
-    handle_scan_result,
-    sanitize_content,
-    validate_with_llm,
-    validate_response,
-    parse_validation_mode,
-    ThreatLevel,
-)
-
 
 # Model configuration
-MODEL = os.environ.get(
-    "TEST_MODEL", "bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0"
-)
+MODEL = os.environ.get("TEST_MODEL", "bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
@@ -82,8 +80,9 @@ def test_pattern_detection_blocks_high_threat():
     print(f"Threat level: {scan_result.threat_level.value}")
     print(f"Issues: {scan_result.issues}")
 
-    assert scan_result.threat_level in (ThreatLevel.HIGH, ThreatLevel.CRITICAL), \
+    assert scan_result.threat_level in (ThreatLevel.HIGH, ThreatLevel.CRITICAL), (
         f"Expected HIGH or CRITICAL, got {scan_result.threat_level}"
+    )
 
     # Should raise ValueError when handling
     raised = False
@@ -113,8 +112,9 @@ def test_pattern_detection_allows_legitimate():
     print(f"Threat level: {scan_result.threat_level.value}")
     print(f"Issues: {scan_result.issues}")
 
-    assert scan_result.threat_level in (ThreatLevel.NONE, ThreatLevel.LOW), \
+    assert scan_result.threat_level in (ThreatLevel.NONE, ThreatLevel.LOW), (
         f"Expected NONE or LOW, got {scan_result.threat_level}"
+    )
 
     # Should not raise
     handle_scan_result(scan_result)
@@ -308,7 +308,7 @@ def test_known_injection_payloads():
             # Try LLM validation
             is_injection = validate_with_llm(payload, call_llm)
             if is_injection:
-                print(f"  ✓ Blocked by LLM validation")
+                print("  ✓ Blocked by LLM validation")
                 results.append((name, "blocked_llm"))
             else:
                 print(f"  ⚠ Not detected (threat: {scan_result.threat_level.value})")
@@ -362,6 +362,7 @@ def main():
         except Exception as e:
             print(f"\n❌ ERROR in {name}: {e}")
             import traceback
+
             traceback.print_exc()
             results.append((name, False))
 

@@ -4,14 +4,12 @@ This module handles the formatting and rendering of changelogs, including
 section headers, change items, and complete changelog documents.
 """
 
-from typing import Dict, List, Optional
-
 from config import AudienceConfig
-from i18n import get_section_icon, get_section_name
+from i18n import get_section_name
 from models import Change, ChangeCategory
 
 # Default section order for changelog rendering
-DEFAULT_SECTION_ORDER: List[str] = [
+DEFAULT_SECTION_ORDER: list[str] = [
     "breaking",
     "security",
     "features",
@@ -25,7 +23,7 @@ DEFAULT_SECTION_ORDER: List[str] = [
 ]
 
 # Mapping from ChangeCategory enum values to section keys
-CATEGORY_TO_SECTION: Dict[ChangeCategory, str] = {
+CATEGORY_TO_SECTION: dict[ChangeCategory, str] = {
     ChangeCategory.BREAKING: "breaking",
     ChangeCategory.SECURITY: "security",
     ChangeCategory.FEATURE: "features",
@@ -72,7 +70,7 @@ def format_section_header(
 def format_change_item(
     change: Change,
     config: AudienceConfig,
-    base_url: Optional[str] = None,
+    base_url: str | None = None,
 ) -> str:
     """Format a single change item for the changelog.
 
@@ -222,11 +220,11 @@ def format_breaking_change(
 
 
 def render_changelog(
-    changes: List[Change],
+    changes: list[Change],
     config: AudienceConfig,
     language: str,
     version: str,
-    base_url: Optional[str] = None,
+    base_url: str | None = None,
 ) -> str:
     """Render a complete changelog from a list of changes.
 
@@ -243,7 +241,7 @@ def render_changelog(
     output_format = config.output_format
 
     # Group changes by section
-    sections: Dict[str, List[Change]] = {section: [] for section in DEFAULT_SECTION_ORDER}
+    sections: dict[str, list[Change]] = {section: [] for section in DEFAULT_SECTION_ORDER}
 
     for change in changes:
         section = CATEGORY_TO_SECTION.get(change.category, "other")
@@ -265,7 +263,7 @@ def render_changelog(
     # Apply max_items_per_section limit if configured
     if config.max_items_per_section:
         for section in sections:
-            sections[section] = sections[section][:config.max_items_per_section]
+            sections[section] = sections[section][: config.max_items_per_section]
 
     # Build the changelog
     lines = []

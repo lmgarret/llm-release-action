@@ -2,10 +2,9 @@
 
 import os
 import subprocess
-from typing import Optional
 
 
-def get_repository_url() -> Optional[str]:
+def get_repository_url() -> str | None:
     """Derive repository URL from environment or git.
 
     First tries GITHUB_REPOSITORY environment variable (GitHub Actions).
@@ -57,7 +56,7 @@ def convert_to_https(url: str) -> str:
     return url.rstrip(".git")
 
 
-def get_commit_url(base_url: Optional[str], commit_hash: str) -> Optional[str]:
+def get_commit_url(base_url: str | None, commit_hash: str) -> str | None:
     """Generate URL for a specific commit.
 
     Args:
@@ -72,7 +71,7 @@ def get_commit_url(base_url: Optional[str], commit_hash: str) -> Optional[str]:
     return f"{base_url}/commit/{commit_hash}"
 
 
-def get_pr_url(base_url: Optional[str], pr_number: int) -> Optional[str]:
+def get_pr_url(base_url: str | None, pr_number: int) -> str | None:
     """Generate URL for a pull request.
 
     Args:
@@ -87,7 +86,7 @@ def get_pr_url(base_url: Optional[str], pr_number: int) -> Optional[str]:
     return f"{base_url}/pull/{pr_number}"
 
 
-def get_issue_url(base_url: Optional[str], issue_number: int) -> Optional[str]:
+def get_issue_url(base_url: str | None, issue_number: int) -> str | None:
     """Generate URL for an issue.
 
     Args:

@@ -20,16 +20,15 @@ Architecture:
     List[Change]
 """
 
-import json
 import re
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, List, Optional, Tuple
 
 from content_scanner import sanitize_content, validate_response
-from untrusted import UNTRUSTED_NOTICE, wrap
 from flatten import flatten_changes_to_list
 from models import Change, ChangeCategory, Importance
 from text_splitter import chunk_with_overlap, needs_chunking
+from untrusted import UNTRUSTED_NOTICE, wrap
 
 # Default thresholds
 DEFAULT_CHUNK_SIZE = 2000
@@ -115,7 +114,7 @@ def _parse_importance(imp_str: str) -> Importance:
     return imp_map.get(imp_str.lower(), Importance.MEDIUM)
 
 
-def _parse_change_line(line: str, index: int) -> Optional[Change]:
+def _parse_change_line(line: str, index: int) -> Change | None:
     """Parse a single change line in format: [category|importance] Title | Description"""
     line = line.strip()
     if not line or line.startswith("#"):
@@ -151,7 +150,7 @@ def _parse_change_line(line: str, index: int) -> Optional[Change]:
     )
 
 
-def _extract_changes_from_response(response: str) -> List[Change]:
+def _extract_changes_from_response(response: str) -> list[Change]:
     """Extract changes from LLM response with <CHANGES> delimiter."""
     changes = []
 
@@ -172,7 +171,7 @@ def _extract_changes_from_response(response: str) -> List[Change]:
     return changes
 
 
-def _changes_to_text(changes: List[Change]) -> str:
+def _changes_to_text(changes: list[Change]) -> str:
     """Convert changes to text format for reduce prompt.
 
     Titles and descriptions are sanitized to prevent injection in the reduce phase.
@@ -192,7 +191,7 @@ def _changes_to_text(changes: List[Change]) -> str:
 def extract_changes_from_chunk(
     chunk: str,
     llm_caller: Callable[[str], str],
-) -> List[Change]:
+) -> list[Change]:
     """Extract changes from a single chunk using LLM.
 
     The chunk is sanitized before embedding in the prompt to remove
@@ -219,9 +218,9 @@ def extract_changes_from_chunk(
 
 
 def reduce_changes(
-    all_changes: List[Change],
+    all_changes: list[Change],
     llm_caller: Callable[[str], str],
-) -> List[Change]:
+) -> list[Change]:
     """Reduce/consolidate changes from multiple chunks.
 
     Args:
@@ -239,7 +238,9 @@ def reduce_changes(
         return all_changes
 
     changes_text = _changes_to_text(all_changes)
-    prompt = REDUCE_PROMPT_TEMPLATE.format(notice=UNTRUSTED_NOTICE, changes_text=wrap(changes_text, "extracted changes"))
+    prompt = REDUCE_PROMPT_TEMPLATE.format(
+        notice=UNTRUSTED_NOTICE, changes_text=wrap(changes_text, "extracted changes")
+    )
     response = llm_caller(prompt)
 
     # Validate response for injection indicators
@@ -261,8 +262,7 @@ def reduce_changes(
         }
         imp_priority = {Importance.HIGH: 0, Importance.MEDIUM: 1, Importance.LOW: 2}
         sorted_changes = sorted(
-            all_changes,
-            key=lambda c: (imp_priority.get(c.importance, 2), priority.get(c.category, 10))
+            all_changes, key=lambda c: (imp_priority.get(c.importance, 2), priority.get(c.category, 10))
         )
         return sorted_changes
 
@@ -275,8 +275,8 @@ def process_large_input(
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
     max_workers: int = 5,
-    reduce_llm_caller: Optional[Callable[[str], str]] = None,
-) -> List[Change]:
+    reduce_llm_caller: Callable[[str], str] | None = None,
+) -> list[Change]:
     """Process large input using map/reduce pattern.
 
     If input is small enough, returns empty list (caller should use normal path).
@@ -305,13 +305,12 @@ def process_large_input(
         return []  # Single chunk, use normal processing
 
     # Map phase: extract changes from each chunk in parallel
-    all_changes: List[Change] = []
+    all_changes: list[Change] = []
     change_id_counter = 1
 
     with ThreadPoolExecutor(max_workers=min(len(chunks), max_workers)) as executor:
         future_to_chunk = {
-            executor.submit(extract_changes_from_chunk, chunk, llm_caller): i
-            for i, chunk in enumerate(chunks)
+            executor.submit(extract_changes_from_chunk, chunk, llm_caller): i for i, chunk in enumerate(chunks)
         }
 
         for future in as_completed(future_to_chunk):
@@ -358,7 +357,7 @@ def process_large_input(
     return final_changes
 
 
-def determine_version_from_changes(changes: List[Change]) -> str:
+def determine_version_from_changes(changes: list[Change]) -> str:
     """Determine version bump from extracted changes.
 
     Logic:
