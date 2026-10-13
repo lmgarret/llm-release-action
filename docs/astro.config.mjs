@@ -9,6 +9,8 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'LLM Release Action',
+      logo: { src: './src/assets/logo.svg' },
+      customCss: ['./src/styles/custom.css'],
       description:
         'GitHub Action that analyzes commits with an LLM, suggests semantic version bumps and writes changelogs for several audiences and languages.',
       social: [
