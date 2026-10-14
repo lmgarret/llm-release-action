@@ -62,6 +62,7 @@ class Preview:
     bump: str
     current_version: str
     next_version: str
+    release_name: str
     project_type: str
     reasoning: str
     changelogs: dict[str, dict[str, str]]
@@ -129,11 +130,17 @@ def save_changes(preview: Preview, path: Path) -> None:
         "bump": preview.bump,
         "current_version": preview.current_version,
         "next_version": preview.next_version,
+        "release_name": preview.release_name,
         "project_type": preview.project_type,
         "reasoning": preview.reasoning,
         "changes": [to_jsonable(dataclasses.asdict(c)) for c in preview.changes],
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def release_name_of(saved: dict[str, Any]) -> str:
+    """Release name in a saved changes file (older files only have next_version)."""
+    return saved.get("release_name") or saved["next_version"]
 
 
 def load_changes(path: Path) -> dict[str, Any]:
@@ -212,6 +219,7 @@ def run_full(verbose: bool) -> Preview:
         bump=outputs["bump"],
         current_version=outputs["current_version"],
         next_version=outputs["next_version"],
+        release_name=outputs.get("release_name") or outputs["next_version"],
         project_type=outputs["project_type"],
         reasoning=outputs.get("reasoning", ""),
         changelogs=json.loads(outputs["changelogs"]),
@@ -233,7 +241,7 @@ def generate_changelogs(saved: dict[str, Any], config_yaml: str) -> dict[str, di
         model=model_config.get_changelog_model(),
         changes=saved["changes"],
         changelog_config=changelog_config,
-        version=saved["next_version"],
+        version=release_name_of(saved),
         base_url=get_repository_url(),
         temperature=analyze.get_env_optional_float("INPUT_TEMPERATURE", None),
         max_tokens=analyze.get_env_int("INPUT_MAX_TOKENS", 4000),
@@ -248,7 +256,7 @@ def generate_changelogs(saved: dict[str, Any], config_yaml: str) -> dict[str, di
             changelogs=changelogs,
             changes=saved["changes"],
             changelog_config=changelog_config,
-            version=saved["next_version"],
+            version=release_name_of(saved),
         )
     return analyze.sanitize_changelogs(changelogs, changelog_config)
 
@@ -268,6 +276,7 @@ def run_changelogs_only(saved: dict[str, Any], config_yaml: str, verbose: bool) 
         bump=saved["bump"],
         current_version=saved["current_version"],
         next_version=saved["next_version"],
+        release_name=release_name_of(saved),
         project_type=saved["project_type"],
         reasoning=saved.get("reasoning", ""),
         changelogs=changelogs,
@@ -286,7 +295,9 @@ def render_summary(preview: Preview, from_saved: bool) -> Table:
     table.add_column(style="bold cyan")
     table.add_column()
     source = " (from saved changes)" if from_saved else ""
-    table.add_row("Version", f"{preview.current_version} → {preview.next_version} ({preview.bump}){source}")
+    table.add_row("Release", f"{preview.current_version} → {preview.release_name}{source}")
+    table.add_row("Next version", preview.next_version or "— (versioning: none)")
+    table.add_row("Bump", preview.bump)
     table.add_row("Project type", preview.project_type)
     table.add_row("Changes", str(len(preview.changes)))
     for model, stats in preview.usage.items():
@@ -330,9 +341,11 @@ def main(
     ],
     repo: Annotated[Path, typer.Option(help="Checkout of the repo to analyze.")] = Path("."),
     base: Annotated[
-        str | None, typer.Option("--from", help="Version/tag to compare from. Default: latest semver tag.")
+        str | None, typer.Option("--from", help="Tag, SHA or branch to compare from. Default: previous release tag.")
     ] = None,
     head: Annotated[str, typer.Option("--to", help="Ref to compare to.")] = "HEAD",
+    versioning: Annotated[str, typer.Option(help="semver, or none for non-semver (e.g. timestamped) tags.")] = "semver",
+    tag_pattern: Annotated[str, typer.Option(help="Glob matching release tags, e.g. 'demo-*'.")] = "",
     config: Annotated[Path | None, typer.Option(help="changelog_config YAML file.")] = None,
     project_type: Annotated[str, typer.Option(help="auto, library, api, service, app or generic.")] = "auto",
     context_files: Annotated[str, typer.Option(help="context_files patterns, e.g. README.md,docs/glossary.md.")] = "",
@@ -365,8 +378,10 @@ def main(
     set_action_inputs(
         {
             "model": model,
-            "current_version": base or "",
+            "base_ref": base or "",
             "head_ref": head,
+            "versioning": versioning,
+            "tag_pattern": tag_pattern,
             "changelog_config": config_yaml,
             "project_type": project_type,
             "context_files": context_files,
