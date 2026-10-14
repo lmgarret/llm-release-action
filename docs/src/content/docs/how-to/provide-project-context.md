@@ -10,7 +10,7 @@ repository root). Point `context_files` at more documentation
 describing what is public in your project:
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
     context_files: /README.md,docs/ARCHITECTURE.md

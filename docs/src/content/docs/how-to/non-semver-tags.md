@@ -24,7 +24,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: lmgarret/llm-release-action@v1
+      - uses: lmgarret/llm-release-action@v2
         id: release
         with:
           model: anthropic/claude-sonnet-5

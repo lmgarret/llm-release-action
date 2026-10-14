@@ -56,6 +56,8 @@ See [Model parameters](/llm-release-action/explanation/model-parameters/).
 
 ## Migrating from v1
 
+Change `lmgarret/llm-release-action@v1` to `@v2`, then replace the inputs below.
+
 | v1 input | Replacement |
 |----------|-------------|
 | `model_analysis`, `model_changelog` | `model`. All main work runs on it. |

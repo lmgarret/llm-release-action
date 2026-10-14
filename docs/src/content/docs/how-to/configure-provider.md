@@ -11,7 +11,7 @@ The `model` input takes a [LiteLLM model string](https://docs.litellm.ai/docs/pr
 ## AWS Bedrock
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
   env:
@@ -27,7 +27,7 @@ step instead of static keys.
 ## Anthropic
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: anthropic/claude-sonnet-5
   env:
@@ -37,7 +37,7 @@ step instead of static keys.
 ## OpenAI
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: openai/gpt-4.1
   env:
@@ -47,7 +47,7 @@ step instead of static keys.
 ## Azure OpenAI
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: azure/<deployment-name>
   env:

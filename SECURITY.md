@@ -64,7 +64,7 @@ JavaScript code. Escape Markdown changelogs for whatever renders them.
 ### Supply Chain Security
 
 - Pin this action to a full commit SHA (`@<sha> # v1.2.0`) and let Dependabot
-  bump it; `@v1` moves with every release
+  bump it; `@v2` moves with every release
 - Review the action source before use
 - All Python dependencies, transitive ones included, are pinned with hashes and
   installed with `--require-hashes`

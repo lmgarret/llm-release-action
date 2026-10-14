@@ -31,7 +31,7 @@ The action runs in your workflow next to your provider API key, so a compromised
 or dependency would run there too.
 
 - Pin the action to a full commit SHA, with the version in a comment, and let Dependabot
-  bump it: `uses: lmgarret/llm-release-action@<sha> # v1.2.0`. Tags like `@v1` move
+  bump it: `uses: lmgarret/llm-release-action@<sha> # v2.0.0`. Tags like `@v2` move
   with every release.
 - Every Python dependency, transitive ones included, is pinned to an exact version with
   hashes in `uv.lock`, and uv checks those hashes on install, so a new or tampered

@@ -12,7 +12,7 @@ handles the cheap internal calls: project type detection, context file summariza
 diff extraction. It defaults to `model`.
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
     fast_model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
@@ -28,7 +28,7 @@ LiteLLM translates `reasoning_effort` into Anthropic's adaptive thinking plus
 `output_config.effort` (`low`, `medium`, `high`, `xhigh`, `max`):
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: anthropic/claude-sonnet-5-5
     fast_model: anthropic/claude-haiku-5-5

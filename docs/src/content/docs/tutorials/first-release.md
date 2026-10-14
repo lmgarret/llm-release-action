@@ -58,7 +58,7 @@ jobs:
         with:
           fetch-depth: 0  # The action needs the full git history
 
-      - uses: lmgarret/llm-release-action@v1
+      - uses: lmgarret/llm-release-action@v2
         id: release
         with:
           model: anthropic/claude-sonnet-5

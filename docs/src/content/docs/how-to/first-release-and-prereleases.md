@@ -12,7 +12,7 @@ that no tag was found. There is no version to bump from, so `next_version` is em
 `current_version` to get one:
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
     current_version: v0.0.0
