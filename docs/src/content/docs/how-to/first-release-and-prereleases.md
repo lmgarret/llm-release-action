@@ -18,7 +18,8 @@ Without a semver tag the action can't find a starting point and fails with
 ```
 
 The whole history is analyzed and the action suggests `v0.1.0` or `v1.0.0` depending on
-the changes. Do the same if your tags aren't semver.
+the changes. If your tags aren't semver, see
+[Release with non-semver tags](/llm-release-action/how-to/non-semver-tags/).
 
 ## Pre-releases
 

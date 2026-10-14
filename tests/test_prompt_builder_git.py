@@ -25,6 +25,9 @@ def repo(tmp_path, monkeypatch):
     _run(tmp_path, "git", "init", "-q", ".")
     _run(tmp_path, "git", "config", "user.email", "test@example.com")
     _run(tmp_path, "git", "config", "user.name", "Test")
+    # A global tag.gpgsign would make `git tag` need a signing key
+    _run(tmp_path, "git", "config", "tag.gpgsign", "false")
+    _run(tmp_path, "git", "config", "commit.gpgsign", "false")
 
     for message in ("feat: first thing", "fix: second thing", "feat!: breaking thing"):
         (tmp_path / "f.txt").write_text(message)

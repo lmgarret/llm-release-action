@@ -55,7 +55,14 @@ from validation import (
     truncate_to_length,
     validate_changelog,
 )
-from version import detect_latest_tag, is_shallow_clone, parse_version
+from version import (
+    UNRELEASED_LABEL,
+    SemanticVersion,
+    is_shallow_clone,
+    parse_version,
+    resolve_release_label,
+    resolve_release_range,
+)
 
 
 @dataclass
@@ -493,6 +500,7 @@ def run_phase1(
     thinking: str = "",
     extra_params: dict[str, Any] | None = None,
     project_profile: ProjectProfile | None = None,
+    base_ref: str | None = None,
 ) -> AnalysisResult:
     """Run Phase 1: Semantic Analysis.
 
@@ -502,7 +510,7 @@ def run_phase1(
     Args:
         model: LiteLLM model string
         commits: List of commits (ignored if content_override provided)
-        base_version: Current version string
+        base_version: Current version string, or the base ref without semver
         content_override: Optional content to analyze instead of commits
         max_commits: Max commits to include
         include_diffs: Comma-separated file patterns for diffs
@@ -516,11 +524,13 @@ def run_phase1(
         context_content: Optional project context from context files
         diff_analysis_content: Optional structured diff analysis (replaces raw diffs when provided)
         project_profile: Optional project profile selecting the breaking-change rules
+        base_ref: Git ref the range starts from, for diffs (defaults to base_version)
 
     Returns:
         AnalysisResult with bump, reasoning, and changes
     """
     log_group("Phase 1: Semantic Analysis")
+    base_ref = base_ref or base_version
 
     # Use provided validation model or fall back to main model
     val_model = validation_model if validation_model else model
@@ -721,7 +731,7 @@ def run_phase1(
                         base_version=base_version,
                         max_commits=max_commits,
                         diff_patterns=diff_patterns,
-                        base_ref=base_version,
+                        base_ref=base_ref,
                         head_ref=head_ref,
                         context_content=context_content,
                         project_profile=project_profile,
@@ -744,7 +754,7 @@ def run_phase1(
                     base_version=base_version,
                     max_commits=max_commits,
                     diff_patterns=diff_patterns,
-                    base_ref=base_version,
+                    base_ref=base_ref,
                     head_ref=head_ref,
                     context_content=context_content,
                     project_profile=project_profile,
@@ -1059,6 +1069,10 @@ def main() -> int:
         model_changelog = os.environ.get("INPUT_MODEL_CHANGELOG", "")
         current_version_input = os.environ.get("INPUT_CURRENT_VERSION", "")
         head_ref = get_env("INPUT_HEAD_REF", "HEAD")
+        base_ref_input = os.environ.get("INPUT_BASE_REF", "").strip()
+        tag_pattern = os.environ.get("INPUT_TAG_PATTERN", "").strip()
+        versioning = get_env("INPUT_VERSIONING", "semver").strip().lower() or "semver"
+        release_name = os.environ.get("INPUT_RELEASE_NAME", "").strip()
         include_diffs = get_env("INPUT_INCLUDE_DIFFS", "**/openapi*.yaml,**/migrations/**,**/*.proto")
         max_commits = get_env_int("INPUT_MAX_COMMITS", 50)
         temperature = get_env_optional_float("INPUT_TEMPERATURE", None)
@@ -1105,6 +1119,11 @@ def main() -> int:
         log_group("Validating inputs")
         validation_result = validate_inputs(
             current_version=current_version_input if current_version_input else None,
+            head_ref=head_ref,
+            versioning=versioning,
+            base_ref=base_ref_input,
+            tag_pattern=tag_pattern,
+            release_name=release_name,
             content_override=content_override if content_override else None,
             changelog_config=changelog_config_str if changelog_config_str else None,
             include_diffs=include_diffs,
@@ -1139,18 +1158,21 @@ def main() -> int:
         use_content_override = bool(content_override.strip())
         commits: list[CommitInfo] = []
 
+        # Where the analyzed range starts (a git ref) and, with semver, the version to bump
+        base_ref = ""
+        current_version: SemanticVersion | None = None
+
         if use_content_override:
             log_group("Using content override")
             print(f"Content override provided ({len(content_override)} chars)")
             log_group_end()
 
-            # For content override, current_version is required
-            if not current_version_input:
-                log_error("current_version is required when using content_override")
-                return 1
-
-            current_version_str = current_version_input
-            current_version = parse_version(current_version_str)
+            if versioning == "semver":
+                # For content override, current_version is required
+                if not current_version_input:
+                    log_error("current_version is required when using content_override")
+                    return 1
+                current_version = parse_version(current_version_input)
         else:
             log_group("Validating git environment")
 
@@ -1159,28 +1181,34 @@ def main() -> int:
                 log_error("Shallow clone detected. Use fetch-depth: 0 in your checkout action.")
                 return 1
 
-            # Determine current version
-            if current_version_input:
-                current_version_str = current_version_input
-                print(f"Using provided version: {current_version_str}")
-            else:
-                detected = detect_latest_tag()
-                if not detected:
-                    log_error("No semver tags found. Please provide current_version input.")
-                    return 1
-                current_version_str = detected
-                print(f"Auto-detected version: {current_version_str}")
-
-            current_version = parse_version(current_version_str)
+            try:
+                release_range = resolve_release_range(
+                    versioning=versioning,
+                    head_ref=head_ref,
+                    base_ref=base_ref_input,
+                    current_version=current_version_input,
+                    tag_pattern=tag_pattern,
+                )
+            except ValueError as e:
+                log_error(str(e))
+                return 1
+            base_ref = release_range.base_ref
+            current_version = release_range.version
+            print(f"Comparing {base_ref}..{head_ref}")
+            if current_version:
+                print(f"Current version: {current_version}")
             log_group_end()
 
             log_group("Fetching commits")
-            commits = get_commits(current_version_str, head_ref)
+            commits = get_commits(base_ref, head_ref)
             if not commits:
-                log_error(f"No commits found between {current_version_str} and {head_ref}")
+                log_error(f"No commits found between {base_ref} and {head_ref}")
                 return 1
             print(f"Found {len(commits)} commits")
             log_group_end()
+
+        # How the starting point is named in prompts and the current_version output
+        base_label = str(current_version) if current_version else base_ref or "previous release"
 
         # Get repository URL for links
         base_url = get_repository_url()
@@ -1282,7 +1310,7 @@ def main() -> int:
                 import subprocess
 
                 diff_result = subprocess.run(
-                    ["git", "diff", str(current_version), head_ref],
+                    ["git", "diff", base_ref, head_ref],
                     capture_output=True,
                     text=True,
                     check=True,
@@ -1333,7 +1361,8 @@ def main() -> int:
         analysis_result = run_phase1(
             model=model_config.get_analysis_model(),
             commits=commits,
-            base_version=str(current_version),
+            base_version=base_label,
+            base_ref=base_ref,
             content_override=content_override if use_content_override else None,
             max_commits=max_commits,
             include_diffs=include_diffs,
@@ -1358,7 +1387,7 @@ def main() -> int:
                 import subprocess
 
                 result = subprocess.run(
-                    ["git", "diff", "--name-only", str(current_version), head_ref],
+                    ["git", "diff", "--name-only", base_ref, head_ref],
                     capture_output=True,
                     text=True,
                     check=True,
@@ -1377,15 +1406,21 @@ def main() -> int:
         if not analysis_result.changes:
             log_warning("Phase 1 produced no changes - changelog will be empty")
 
-        # Calculate next version
-        next_version = current_version.bump(analysis_result.bump)
+        # Calculate next version (none without semver) and the name the changelogs use
+        next_version = str(current_version.bump(analysis_result.bump)) if current_version else ""
+        if next_version:
+            release_label = release_name or next_version
+        elif use_content_override:
+            release_label = release_name or UNRELEASED_LABEL
+        else:
+            release_label = resolve_release_label(head_ref, tag_pattern, release_name)
 
         # === PHASE 2: Changelog Generation ===
         changelogs, metadata = run_phase2(
             model=model_config.get_changelog_model(),
             changes=analysis_result.changes,
             changelog_config=changelog_config,
-            version=str(next_version),
+            version=release_label,
             base_url=base_url,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -1402,15 +1437,16 @@ def main() -> int:
                 changelogs=changelogs,
                 changes=analysis_result.changes,
                 changelog_config=changelog_config,
-                version=str(next_version),
+                version=release_label,
             )
 
         # === Set Outputs ===
         log_group("Setting outputs")
 
         set_output("bump", analysis_result.bump)
-        set_output("current_version", str(current_version))
-        set_output("next_version", str(next_version))
+        set_output("current_version", base_label)
+        set_output("next_version", next_version)
+        set_output("release_name", release_label)
         set_output("reasoning", analysis_result.reasoning)
         set_output("project_type", project_profile.project_type)
 
@@ -1448,8 +1484,9 @@ def main() -> int:
         if all_warnings:
             print(f"Warnings: {len(all_warnings)}")
 
-        print(f"Current version: {current_version}")
-        print(f"Next version: {next_version}")
+        print(f"Current version: {base_label}")
+        print(f"Next version: {next_version or '(versioning: none)'}")
+        print(f"Release name: {release_label}")
         if dry_run:
             print("(dry-run mode - no version will be created)")
 

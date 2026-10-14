@@ -4,6 +4,8 @@ import re
 import subprocess
 from dataclasses import dataclass
 
+SEMVER_TAG_PATTERN = re.compile(r"^v?\d+\.\d+\.\d+(-[\w.]+)?$")
+
 
 @dataclass
 class SemanticVersion:
@@ -110,12 +112,51 @@ def detect_latest_tag() -> str | None:
     tags = [t for t in tags if t]  # Remove empty strings
 
     # Find first valid semver tag
-    semver_pattern = re.compile(r"^v?\d+\.\d+\.\d+(-[\w.]+)?$")
     for tag in tags:
-        if semver_pattern.match(tag):
+        if SEMVER_TAG_PATTERN.match(tag):
             return tag
 
     return None
+
+
+def _describe(ref: str, match: str) -> str | None:
+    """Nearest tag matching `match` reachable from `ref`, or None."""
+    result = subprocess.run(
+        ["git", "describe", "--tags", "--abbrev=0", "--match", match, ref],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def detect_previous_tag(pattern: str, head_ref: str) -> str | None:
+    """Nearest tag matching `pattern` strictly before `head_ref`.
+
+    Tags on `head_ref` itself are skipped, so when the release being described
+    is already tagged (e.g. a workflow triggered by pushing that tag), the
+    previous release is returned rather than the current one.
+    """
+    return _describe(f"{head_ref}^", pattern)
+
+
+def detect_semver_tag_at_or_before(ref: str) -> str | None:
+    """Nearest semver tag reachable from `ref` (including `ref` itself), or None."""
+    tag = _describe(ref, "v*")
+    return tag if tag and SEMVER_TAG_PATTERN.match(tag) else None
+
+
+def tags_pointing_at(ref: str, pattern: str) -> list[str]:
+    """Tags matching `pattern` that point at `ref`."""
+    result = subprocess.run(
+        ["git", "tag", "--points-at", ref, "--list", pattern],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return []
+    return result.stdout.split()
 
 
 def is_shallow_clone() -> bool:
@@ -130,3 +171,91 @@ def is_shallow_clone() -> bool:
         return result.stdout.strip() == "true"
     except subprocess.CalledProcessError:
         return False
+
+
+VERSIONING_SCHEMES = ("semver", "none")
+UNRELEASED_LABEL = "Unreleased"
+
+
+@dataclass
+class ReleaseRange:
+    """Where the analyzed commit range starts, and the version it starts from.
+
+    `version` is None when versioning is "none": the range is then only a pair
+    of git refs and no next version is computed.
+    """
+
+    base_ref: str
+    version: SemanticVersion | None
+
+
+def _is_tag(ref: str) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"refs/tags/{ref}"],
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
+def _detect_base_ref(versioning: str, tag_pattern: str, head_ref: str) -> str:
+    """Previous release tag, found by `tag_pattern` or (for semver) the latest v* tag."""
+    if tag_pattern or versioning == "none":
+        pattern = tag_pattern or "*"
+        tag = detect_previous_tag(pattern, head_ref)
+        if not tag:
+            raise ValueError(f"No tag matching '{pattern}' found before {head_ref}. Set base_ref.")
+        return tag
+    tag = detect_latest_tag()
+    if not tag:
+        raise ValueError("No semver tags found. Set current_version or base_ref.")
+    return tag
+
+
+def _semver_base(base_ref: str, current_version: str) -> SemanticVersion:
+    """The version to bump from: current_version, else the base ref or the nearest v* tag before it."""
+    if current_version:
+        return parse_version(current_version)
+    if SEMVER_TAG_PATTERN.match(base_ref):
+        return parse_version(base_ref)
+    tag = detect_semver_tag_at_or_before(base_ref)
+    if not tag:
+        raise ValueError(
+            f"'{base_ref}' is not a semver version and no semver tag precedes it. "
+            "Set current_version, or versioning: none to skip version calculation."
+        )
+    return parse_version(tag)
+
+
+def resolve_release_range(
+    versioning: str,
+    head_ref: str,
+    base_ref: str = "",
+    current_version: str = "",
+    tag_pattern: str = "",
+) -> ReleaseRange:
+    """Resolve the commit range and base version from the action inputs.
+
+    The range starts at base_ref, else current_version (which has always
+    doubled as a ref), else the previous release tag.
+
+    Raises:
+        ValueError: If no base can be found, or semver needs a version that cannot be derived
+    """
+    base = base_ref or current_version or _detect_base_ref(versioning, tag_pattern, head_ref)
+    if versioning == "none":
+        return ReleaseRange(base_ref=base, version=None)
+    return ReleaseRange(base_ref=base, version=_semver_base(base, current_version))
+
+
+def resolve_release_label(head_ref: str, tag_pattern: str = "", release_name: str = "") -> str:
+    """Name of the release being described, for changelogs when there is no next version.
+
+    release_name if set, else head_ref when it is a tag, else a tag matching
+    tag_pattern on head_ref (a tag-triggered run checking out HEAD), else "Unreleased".
+    """
+    if release_name:
+        return release_name
+    if head_ref != "HEAD" and _is_tag(head_ref):
+        return head_ref
+    tags = tags_pointing_at(head_ref, tag_pattern or "*")
+    return tags[0] if tags else UNRELEASED_LABEL
