@@ -44,10 +44,9 @@ sys.path.insert(0, str(SRC_DIR))
 
 import analyze  # noqa: E402
 from config import ChangelogConfig  # noqa: E402
-from model_config import ModelConfig  # noqa: E402
 from models import AnalysisResult, BreakingInfo, Change, ChangeCategory, Importance  # noqa: E402
-from prompt_builder import ref_exists  # noqa: E402
 from repo_url import get_repository_url  # noqa: E402
+from version import ref_exists  # noqa: E402
 
 app = typer.Typer(add_completion=False, help=__doc__)
 # Bound to the real streams so output survives the log capture below
@@ -231,25 +230,18 @@ def run_full(verbose: bool) -> Preview:
 
 def generate_changelogs(saved: dict[str, Any], config_yaml: str) -> dict[str, dict[str, str]]:
     """Phases 2 and 3 plus sanitizing, with the same settings main() reads."""
-    model_config = ModelConfig.from_env(
-        model=analyze.get_env("INPUT_MODEL"),
-        model_analysis=None,
-        model_changelog=os.environ.get("INPUT_MODEL_CHANGELOG") or None,
-    )
     changelog_config = ChangelogConfig.from_yaml(config_yaml)
     changelogs, _ = analyze.run_phase2(
-        model=model_config.get_changelog_model(),
+        model=analyze.get_env("INPUT_MODEL"),
         changes=saved["changes"],
         changelog_config=changelog_config,
         version=release_name_of(saved),
         base_url=get_repository_url(),
-        temperature=analyze.get_env_optional_float("INPUT_TEMPERATURE", None),
-        max_tokens=analyze.get_env_int("INPUT_MAX_TOKENS", 4000),
-        timeout=analyze.get_env_int("INPUT_TIMEOUT", 120),
-        debug=analyze.get_env_bool("INPUT_DEBUG", False),
-        thinking=os.environ.get("INPUT_THINKING", "").strip().lower(),
-        extra_params=analyze.parse_extra_llm_params(os.environ.get("INPUT_EXTRA_LLM_PARAMS", "")),
-        project_type=saved["project_type"],
+        llm=analyze.LLMSettings(
+            max_tokens=analyze.get_env_int("INPUT_MAX_TOKENS", 4000),
+            timeout=analyze.get_env_int("INPUT_TIMEOUT", 120),
+            params=analyze.parse_llm_params(os.environ.get("INPUT_LLM_PARAMS", "")),
+        ),
     )
     if changelogs:
         changelogs = analyze.run_phase3(
@@ -296,7 +288,7 @@ def render_summary(preview: Preview, from_saved: bool) -> Table:
     table.add_column()
     source = " (from saved changes)" if from_saved else ""
     table.add_row("Release", f"{preview.current_version} → {preview.release_name}{source}")
-    table.add_row("Next version", preview.next_version or "— (versioning: none)")
+    table.add_row("Next version", preview.next_version or "— (no version to bump from)")
     table.add_row("Bump", preview.bump)
     table.add_row("Project type", preview.project_type)
     table.add_row("Changes", str(len(preview.changes)))
@@ -344,11 +336,14 @@ def main(
         str | None, typer.Option("--from", help="Tag, SHA or branch to compare from. Default: previous release tag.")
     ] = None,
     head: Annotated[str, typer.Option("--to", help="Ref to compare to.")] = "HEAD",
-    versioning: Annotated[str, typer.Option(help="semver, or none for non-semver (e.g. timestamped) tags.")] = "semver",
-    tag_pattern: Annotated[str, typer.Option(help="Glob matching release tags, e.g. 'demo-*'.")] = "",
+    tag_pattern: Annotated[
+        str, typer.Option(help="Glob matching release tags, e.g. 'demo-*'. Default: v1.2.3-style tags.")
+    ] = "",
     config: Annotated[Path | None, typer.Option(help="changelog_config YAML file.")] = None,
     project_type: Annotated[str, typer.Option(help="auto, library, api, service, app or generic.")] = "auto",
-    context_files: Annotated[str, typer.Option(help="context_files patterns, e.g. README.md,docs/glossary.md.")] = "",
+    context_files: Annotated[
+        str, typer.Option(help="context_files patterns, e.g. /README.md,docs/glossary.md.")
+    ] = "/README.md",
     inputs: Annotated[
         list[str] | None, typer.Option("--input", help="Any other action input as NAME=VALUE (repeatable).")
     ] = None,
@@ -380,7 +375,6 @@ def main(
             "model": model,
             "base_ref": base or "",
             "head_ref": head,
-            "versioning": versioning,
             "tag_pattern": tag_pattern,
             "changelog_config": config_yaml,
             "project_type": project_type,

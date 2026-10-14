@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from analyze import (
     call_llm_with_retry,
-    parse_extra_llm_params,
+    parse_llm_params,
     sanitize_changelog,
 )
 from parser import parse_response
@@ -189,7 +189,6 @@ class TestLLMRetry:
                 result, usage = call_llm_with_retry(
                     model="test/model",
                     prompt="test prompt",
-                    temperature=0.2,
                     max_tokens=100,
                     timeout=30,
                 )
@@ -208,7 +207,6 @@ class TestLLMRetry:
                 call_llm_with_retry(
                     model="test/model",
                     prompt="test prompt",
-                    temperature=0.2,
                     max_tokens=100,
                     timeout=30,
                 )
@@ -227,7 +225,6 @@ class TestLLMRetry:
                     call_llm_with_retry(
                         model="test/model",
                         prompt="test prompt",
-                        temperature=0.2,
                         max_tokens=100,
                         timeout=30,
                         max_retries=3,
@@ -415,53 +412,33 @@ class TestCompletionKwargs:
     the provider receives.
     """
 
-    def test_temperature_forwarded_when_set(self):
-        for model in MODELS:
-            kwargs = _forwarded_kwargs(model=model, temperature=0.2, max_tokens=4000)
-            assert kwargs["temperature"] == 0.2, model
-
-    def test_temperature_omitted_when_unset(self):
-        for model in MODELS:
-            kwargs = _forwarded_kwargs(model=model, temperature=None, max_tokens=4000)
-            assert "temperature" not in kwargs, model
-
     def test_max_tokens_forwarded_unchanged(self):
         for model in MODELS:
-            kwargs = _forwarded_kwargs(model=model, temperature=None, max_tokens=10)
+            kwargs = _forwarded_kwargs(model=model, max_tokens=10)
             assert kwargs["max_tokens"] == 10, model
 
-    def test_thinking_omitted_by_default(self):
-        kwargs = _forwarded_kwargs(model=MODELS[0], temperature=None, max_tokens=4000)
+    def test_nothing_extra_by_default(self):
+        kwargs = _forwarded_kwargs(model=MODELS[0], max_tokens=4000)
+        assert "temperature" not in kwargs
         assert "thinking" not in kwargs
 
-    def test_thinking_modes_forwarded(self):
+    def test_params_merged(self):
         for model in MODELS:
-            adaptive = _forwarded_kwargs(model=model, temperature=None, max_tokens=4000, thinking="adaptive")
-            off = _forwarded_kwargs(model=model, temperature=None, max_tokens=4000, thinking="off")
-            assert adaptive["thinking"] == {"type": "adaptive"}, model
-            assert off["thinking"] == {"type": "disabled"}, model
+            kwargs = _forwarded_kwargs(
+                model=model,
+                max_tokens=4000,
+                params={"temperature": 0.2, "thinking": {"type": "adaptive"}, "reasoning_effort": "low"},
+            )
+            assert kwargs["temperature"] == 0.2, model
+            assert kwargs["thinking"] == {"type": "adaptive"}, model
+            assert kwargs["reasoning_effort"] == "low", model
 
-    def test_extra_params_merged(self):
-        kwargs = _forwarded_kwargs(
-            model=MODELS[0],
-            temperature=None,
-            max_tokens=4000,
-            extra_params={"reasoning_effort": "low"},
-        )
-        assert kwargs["reasoning_effort"] == "low"
-
-    def test_extra_params_override_inputs(self):
-        kwargs = _forwarded_kwargs(
-            model=MODELS[0],
-            temperature=0.2,
-            max_tokens=4000,
-            extra_params={"temperature": 0.9, "max_tokens": 16000},
-        )
-        assert kwargs["temperature"] == 0.9
+    def test_params_override_inputs(self):
+        kwargs = _forwarded_kwargs(model=MODELS[0], max_tokens=4000, params={"max_tokens": 16000})
         assert kwargs["max_tokens"] == 16000
 
     def test_baseline_kwargs_always_present(self):
-        kwargs = _forwarded_kwargs(model=MODELS[2], temperature=0.2, max_tokens=4000)
+        kwargs = _forwarded_kwargs(model=MODELS[2], max_tokens=4000)
         assert kwargs["messages"] == [{"role": "user", "content": "test prompt"}]
         assert kwargs["timeout"] == 30
 
@@ -473,24 +450,26 @@ class TestBadRequestNotRetried:
         mock_completion = MagicMock(side_effect=Exception("400 `temperature` is deprecated for this model."))
         with patch("analyze.litellm.completion", mock_completion):
             with pytest.raises(RuntimeError, match="temperature"):
-                call_llm_with_retry(model=MODELS[0], prompt="p", temperature=0.2, max_tokens=100, timeout=30)
+                call_llm_with_retry(
+                    model=MODELS[0], prompt="p", max_tokens=100, timeout=30, params={"temperature": 0.2}
+                )
         assert mock_completion.call_count == 1
 
 
-class TestParseExtraLLMParams:
-    """extra_llm_params must reject anything that is not a JSON object."""
+class TestParseLLMParams:
+    """llm_params must reject anything that is not a JSON object."""
 
     def test_empty_is_none(self):
-        assert parse_extra_llm_params("") is None
-        assert parse_extra_llm_params("   ") is None
+        assert parse_llm_params("") is None
+        assert parse_llm_params("   ") is None
 
     def test_object_parsed(self):
-        assert parse_extra_llm_params('{"reasoning_effort": "low"}') == {"reasoning_effort": "low"}
+        assert parse_llm_params('{"reasoning_effort": "low"}') == {"reasoning_effort": "low"}
 
     def test_invalid_json_rejected(self):
         with pytest.raises(ValueError, match="Invalid JSON"):
-            parse_extra_llm_params("{not json}")
+            parse_llm_params("{not json}")
 
     def test_non_object_rejected(self):
         with pytest.raises(ValueError, match="must be a JSON object"):
-            parse_extra_llm_params('["a", "b"]')
+            parse_llm_params('["a", "b"]')

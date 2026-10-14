@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from content_scanner import sanitize_content
 from project_profile import ProjectProfile, get_breaking_rules
 from prompts import Phase1Config, render_phase1_prompt
-from untrusted import UNTRUSTED_NOTICE, code_fence, normalize, wrap
+from untrusted import UNTRUSTED_NOTICE, normalize, wrap
 
 
 @dataclass
@@ -81,34 +81,12 @@ def has_breaking_change(message: str) -> bool:
     return False
 
 
-def ref_exists(ref: str) -> bool:
-    """Check whether a git ref resolves to a commit.
-
-    Args:
-        ref: Reference to check (tag, branch or commit)
-
-    Returns:
-        True if the ref resolves, False otherwise
-    """
-    result = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0
-
-
 def get_commits(base_ref: str, head_ref: str = "HEAD") -> list[CommitInfo]:
     """Get commits between two refs.
 
-    `base_ref` doubles as the semver baseline elsewhere, and on a repository's
-    first release there is no tag to diff from -- callers pass a synthetic
-    "v0.0.0" that is a valid version but not a valid ref. When the base does
-    not resolve, walk the full history of `head_ref` instead of failing, so the
-    first release sees every commit.
-
     Args:
-        base_ref: Base reference (tag or commit)
+        base_ref: Base reference (tag or commit), or empty for the whole
+            history of head_ref (a first release)
         head_ref: Head reference (default: HEAD)
 
     Returns:
@@ -117,14 +95,7 @@ def get_commits(base_ref: str, head_ref: str = "HEAD") -> list[CommitInfo]:
     Raises:
         RuntimeError: If git command fails
     """
-    if ref_exists(base_ref):
-        rev_range = f"{base_ref}..{head_ref}"
-    else:
-        rev_range = head_ref
-        print(
-            f"Base ref '{base_ref}' does not exist - treating this as the first "
-            f"release and using the full history of {head_ref}"
-        )
+    rev_range = f"{base_ref}..{head_ref}" if base_ref else head_ref
 
     try:
         # Use %x00 as delimiter for parsing
@@ -168,37 +139,54 @@ def get_commits(base_ref: str, head_ref: str = "HEAD") -> list[CommitInfo]:
     return commits
 
 
-def get_file_diff(base_ref: str, head_ref: str, patterns: list[str], max_lines: int = 100) -> str:
-    """Get diff for specific file patterns.
+def _diff_base(base_ref: str) -> str:
+    """base_ref, or the empty tree when there is none, so a first release diffs everything."""
+    if base_ref:
+        return base_ref
+    result = subprocess.run(
+        ["git", "hash-object", "-t", "tree", "--stdin"],
+        input="",
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
 
-    Args:
-        base_ref: Base reference
-        head_ref: Head reference
-        patterns: File patterns to include
-        max_lines: Maximum lines of diff to include
 
-    Returns:
-        Truncated diff output
+def get_changed_files(base_ref: str, head_ref: str = "HEAD") -> list[str]:
+    """Paths changed between two refs (base_ref empty: every file in head_ref).
+
+    Raises:
+        RuntimeError: If git command fails
     """
     try:
-        cmd = ["git", "diff", f"{base_ref}..{head_ref}", "--"]
-        cmd.extend(patterns)
-
         result = subprocess.run(
-            cmd,
+            ["git", "diff", "--name-only", _diff_base(base_ref), head_ref],
             capture_output=True,
             text=True,
             check=True,
         )
-    except subprocess.CalledProcessError:
-        return ""
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to list changed files: {e.stderr}") from e
+    return [line.strip() for line in result.stdout.split("\n") if line.strip()]
 
-    lines = result.stdout.split("\n")
-    if len(lines) > max_lines:
-        lines = lines[:max_lines]
-        lines.append(f"... (truncated, {len(result.stdout.split(chr(10))) - max_lines} more lines)")
 
-    return "\n".join(lines)
+def get_diff(base_ref: str, head_ref: str, paths: list[str]) -> str:
+    """Unified diff of `paths` between two refs (base_ref empty: against the empty tree).
+
+    Raises:
+        RuntimeError: If git command fails
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", _diff_base(base_ref), head_ref, "--", *paths],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Failed to get diff: {e.stderr}") from e
+    return result.stdout
 
 
 def summarize_commits_by_type(commits: list[CommitInfo]) -> str:
@@ -223,9 +211,6 @@ def build_prompt(
     commits: list[CommitInfo],
     base_version: str,
     max_commits: int = 50,
-    diff_patterns: list[str] | None = None,
-    base_ref: str = "",
-    head_ref: str = "HEAD",
 ) -> str:
     """Build tiered prompt for LLM analysis.
 
@@ -233,9 +218,6 @@ def build_prompt(
         commits: All commits to analyze
         base_version: Current version string
         max_commits: Max recent commits to include in full
-        diff_patterns: File patterns for diff inclusion
-        base_ref: Base git ref for diffs
-        head_ref: Head git ref for diffs
 
     Returns:
         Complete prompt string
@@ -262,16 +244,6 @@ def build_prompt(
 
     if older:
         commit_section += f"\n... and {len(older)} more commits ({summarize_commits_by_type(older)})\n"
-
-    # Tier 3: Key file diffs
-    diff_section = ""
-    if diff_patterns and base_ref:
-        diff = get_file_diff(base_ref, head_ref, diff_patterns)
-        if diff:
-            diff_section = f"""## Key File Diffs
-
-{wrap(code_fence(diff, "diff"), "file diffs")}
-"""
 
     # System prompt with instructions
     system = f"""You are a semantic versioning expert. Analyze the commits and determine the appropriate version bump.
@@ -321,7 +293,7 @@ You MUST respond with these XML tags:
 </CHANGELOG>
 """
 
-    return f"{system}\n\n{metadata}\n{wrap(commit_section, 'commits')}\n{diff_section}"
+    return f"{system}\n\n{metadata}\n{wrap(commit_section, 'commits')}\n"
 
 
 def build_semantic_analysis_prompt(
@@ -329,9 +301,6 @@ def build_semantic_analysis_prompt(
     base_version: str,
     content_override: str | None = None,
     max_commits: int = 50,
-    diff_patterns: list[str] | None = None,
-    base_ref: str = "",
-    head_ref: str = "HEAD",
     detect_breaking: bool = True,
     generate_changelog: bool = True,
     include_commits: bool = True,
@@ -358,15 +327,11 @@ def build_semantic_analysis_prompt(
         base_version: Current version string
         content_override: Optional text to analyze instead of commits (for multi-repo)
         max_commits: Max commits to include in full detail
-        diff_patterns: File patterns for diff inclusion
-        base_ref: Base git ref for diffs
-        head_ref: Head git ref for diffs
         detect_breaking: Include breaking change detection in prompt
         generate_changelog: Include changelog generation in output
         include_commits: Include commit SHA references in output
         context_content: Optional project context from context files (README, etc.)
-        diff_analysis_content: Optional structured diff analysis output. When provided,
-            this is used INSTEAD of raw git diff output. Expected format is a
+        diff_analysis_content: Optional structured diff analysis output, a
             pre-processed summary like:
                 ## Diff Analysis
                 ### api/openapi.yaml
@@ -399,27 +364,12 @@ def build_semantic_analysis_prompt(
         if older:
             input_content += f"\n\n... and {len(older)} additional commits"
 
-    # Build optional diff section
-    # Prefer structured diff analysis over raw diff when provided
-    diff_content: str | None = None
-    structured_diff_analysis: str | None = None
-
-    if diff_analysis_content:
-        # Use pre-processed structured diff analysis
-        structured_diff_analysis = diff_analysis_content
-    elif diff_patterns and base_ref:
-        # Fall back to raw git diff
-        diff = get_file_diff(base_ref, head_ref, diff_patterns)
-        if diff:
-            diff_content = diff
-
     # Use Jinja2 template for the prompt
     config = Phase1Config(
         base_version=base_version,
         input_content=input_content,
         commit_count=commit_count,
-        diff_content=diff_content,
-        diff_analysis_content=structured_diff_analysis,
+        diff_analysis_content=diff_analysis_content,
         detect_breaking=detect_breaking,
         generate_changelog=generate_changelog,
         include_commits=include_commits,

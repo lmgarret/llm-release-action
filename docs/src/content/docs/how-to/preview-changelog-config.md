@@ -20,8 +20,8 @@ Put the YAML you would pass as `changelog_config` in a file, then replay a past 
 `--from` takes any tag, SHA or branch and must exist. Unlike the action, the script does
 not fall back to the full history when the base ref is missing.
 
-If your tags aren't semver (for example timestamps), add `--versioning none`, and
-`--tag-pattern 'demo-*'` to detect the previous release when `--from` is omitted. See
+If your tags aren't semver (for example timestamps), add `--tag-pattern 'demo-*'` to
+detect the previous release when `--from` is omitted. See
 [Release with non-semver tags](/llm-release-action/how-to/non-semver-tags/).
 
 ## Iterate on the config

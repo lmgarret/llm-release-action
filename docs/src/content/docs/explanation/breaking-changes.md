@@ -41,6 +41,6 @@ in the changes still outranks them.
 ## Diffs as evidence
 
 Commit messages can understate a change. Diffs of API specs and migrations show what
-actually changed. By default, raw diffs of those files are included; with
-[`analyze_diffs`](/llm-release-action/how-to/analyze-diffs/) every file diff is analyzed
-for semantic changes, so removals aren't lost to truncation.
+actually changed. Files matching [`diffs`](/llm-release-action/how-to/analyze-diffs/)
+are analyzed for what was added, removed and modified, and the result goes into the
+analysis next to the commits.

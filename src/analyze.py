@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any
@@ -23,27 +24,21 @@ import litellm
 from analyzer import parse_phase1_response
 from changelog import build_changelog_prompt, build_retry_prompt, filter_changes
 from config import AudienceConfig, ChangelogConfig
-from content_scanner import (
-    ValidationMode,
-    handle_scan_result,
-    parse_validation_mode,
-    scan_content_override,
-    truncate_for_context,
-    validate_with_llm,
-)
-from context_loader import ContextResult, detect_staleness, load_context_files
-from diff_analyzer import analyze_diffs
+from content_scanner import handle_scan_result, scan_content_override, truncate_for_context
+from context_loader import DEFAULT_CONTEXT_FILES, ContextResult, detect_staleness, load_context_files
+from diff_analyzer import DEFAULT_DIFF_PATTERNS, analyze_diffs, select_paths
 from flatten import flatten_changes
 from input_validation import validate_inputs
 from map_reduce import determine_version_from_changes, process_large_input
-from model_config import ModelConfig
 from models import AnalysisResult, Change, ChangeStats, ReleaseMetadata
 from output_sanitizer import sanitize_changelog
 from project_profile import ProjectProfile, resolve_project_profile
 from prompt_builder import (
     CommitInfo,
     build_semantic_analysis_prompt,
+    get_changed_files,
     get_commits,
+    get_diff,
     has_breaking_change,
     sanitize_message,
 )
@@ -56,6 +51,7 @@ from validation import (
     validate_changelog,
 )
 from version import (
+    DEFAULT_TAG_PATTERN,
     UNRELEASED_LABEL,
     SemanticVersion,
     is_shallow_clone,
@@ -152,36 +148,8 @@ def get_env_int(name: str, default: int) -> int:
         raise ValueError(f"Invalid integer value for {name}: {value}") from e
 
 
-def get_env_float(name: str, default: float) -> float:
-    """Get environment variable as float."""
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except ValueError as e:
-        raise ValueError(f"Invalid float value for {name}: {value}") from e
-
-
-def get_env_optional_float(name: str, default: float | None) -> float | None:
-    """Get environment variable as float, treating an empty value as unset.
-
-    An explicitly empty input means "omit this parameter", so the request only
-    carries what the workflow actually set.
-    """
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    if value.strip() == "":
-        return None
-    try:
-        return float(value)
-    except ValueError as e:
-        raise ValueError(f"Invalid float value for {name}: {value}") from e
-
-
-def parse_extra_llm_params(raw: str) -> dict[str, Any] | None:
-    """Parse the extra_llm_params input into a kwargs dict.
+def parse_llm_params(raw: str) -> dict[str, Any] | None:
+    """Parse the llm_params input into a kwargs dict.
 
     Args:
         raw: JSON object string, or empty
@@ -197,9 +165,9 @@ def parse_extra_llm_params(raw: str) -> dict[str, Any] | None:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in extra_llm_params: {e}") from e
+        raise ValueError(f"Invalid JSON in llm_params: {e}") from e
     if not isinstance(parsed, dict):
-        raise ValueError(f"extra_llm_params must be a JSON object, got {type(parsed).__name__}")
+        raise ValueError(f"llm_params must be a JSON object, got {type(parsed).__name__}")
     return parsed
 
 
@@ -242,20 +210,12 @@ def set_output(name: str, value: str) -> None:
         print(f"OUTPUT {name}={preview}")
 
 
-THINKING_PARAMS: dict[str, dict[str, str]] = {
-    "adaptive": {"type": "adaptive"},
-    "off": {"type": "disabled"},
-}
-
-
 def build_completion_kwargs(
     model: str,
     prompt: str,
-    temperature: float | None,
     max_tokens: int,
     timeout: int,
-    thinking: str = "",
-    extra_params: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the kwargs for a litellm.completion call.
 
@@ -266,11 +226,9 @@ def build_completion_kwargs(
     Args:
         model: LiteLLM model string
         prompt: User prompt
-        temperature: Sampling temperature, or None to omit it
         max_tokens: Response token cap
         timeout: Request timeout in seconds
-        thinking: "" (omit), "adaptive" or "off"
-        extra_params: Raw passthrough merged last, so it can override anything
+        params: The llm_params input, merged last so it can override anything
 
     Returns:
         Keyword arguments for litellm.completion
@@ -282,14 +240,8 @@ def build_completion_kwargs(
         "timeout": timeout,
     }
 
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-
-    if thinking in THINKING_PARAMS:
-        kwargs["thinking"] = THINKING_PARAMS[thinking]
-
-    if extra_params:
-        kwargs.update(extra_params)
+    if params:
+        kwargs.update(params)
 
     return kwargs
 
@@ -297,13 +249,11 @@ def build_completion_kwargs(
 def call_llm_with_retry(
     model: str,
     prompt: str,
-    temperature: float | None,
     max_tokens: int,
     timeout: int,
     max_retries: int = 3,
     debug: bool = False,
-    thinking: str = "",
-    extra_params: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None,
 ) -> tuple[str, LLMUsage]:
     """Call LLM with exponential backoff retry.
 
@@ -318,11 +268,9 @@ def call_llm_with_retry(
     completion_kwargs = build_completion_kwargs(
         model=model,
         prompt=prompt,
-        temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
-        thinking=thinking,
-        extra_params=extra_params,
+        params=params,
     )
 
     last_error = None
@@ -384,6 +332,32 @@ def call_llm_with_retry(
             raise RuntimeError(f"LLM call failed after {attempt + 1} attempts: {e}") from e
 
     raise RuntimeError(f"LLM call failed after {max_retries} attempts: {last_error}")
+
+
+@dataclass
+class LLMSettings:
+    """Settings shared by every LLM call: the max_tokens, timeout and llm_params inputs."""
+
+    max_tokens: int = 4000
+    timeout: int = 120
+    params: dict[str, Any] | None = None
+    debug: bool = False
+
+    def caller(self, model: str, max_tokens: int | None = None) -> Callable[[str], str]:
+        """A prompt -> response function for the internal steps that take one."""
+
+        def call(prompt: str) -> str:
+            response, _ = call_llm_with_retry(
+                model=model,
+                prompt=prompt,
+                max_tokens=max_tokens or self.max_tokens,
+                timeout=self.timeout,
+                debug=self.debug,
+                params=self.params,
+            )
+            return response
+
+        return call
 
 
 def sanitize_changelogs(
@@ -481,98 +455,50 @@ def parse_commits_json(json_str: str) -> list[CommitInfo]:
     return commits
 
 
+# Commits listed in full when consolidation fails; the rest are only counted
+MAX_COMMITS = 50
+
+
 def run_phase1(
     model: str,
     commits: list[CommitInfo],
     base_version: str,
     content_override: str | None,
-    max_commits: int,
-    include_diffs: str,
-    head_ref: str,
-    temperature: float | None,
-    max_tokens: int,
-    timeout: int,
-    debug: bool,
-    validation_mode: ValidationMode = ValidationMode.BOTH,
-    validation_model: str | None = None,
+    llm: LLMSettings,
     context_content: str | None = None,
     diff_analysis_content: str | None = None,
-    thinking: str = "",
-    extra_params: dict[str, Any] | None = None,
     project_profile: ProjectProfile | None = None,
-    base_ref: str | None = None,
 ) -> AnalysisResult:
     """Run Phase 1: Semantic Analysis.
 
     For large inputs, uses map/reduce to avoid data loss from truncation.
-    Content is scanned for injection patterns and optionally validated with LLM.
+    Content is scanned for injection patterns before use.
 
     Args:
         model: LiteLLM model string
         commits: List of commits (ignored if content_override provided)
         base_version: Current version string, or the base ref without semver
         content_override: Optional content to analyze instead of commits
-        max_commits: Max commits to include
-        include_diffs: Comma-separated file patterns for diffs
-        head_ref: Head git ref
-        temperature: LLM temperature, or None to omit the parameter
-        max_tokens: Max response tokens
-        timeout: Request timeout
-        debug: Enable debug logging
-        validation_mode: Injection validation mode (both, pattern, llm, none)
-        validation_model: Model to use for LLM validation (defaults to model)
+        llm: Settings shared by every LLM call
         context_content: Optional project context from context files
-        diff_analysis_content: Optional structured diff analysis (replaces raw diffs when provided)
+        diff_analysis_content: Optional structured changes extracted from file diffs
         project_profile: Optional project profile selecting the breaking-change rules
-        base_ref: Git ref the range starts from, for diffs (defaults to base_version)
 
     Returns:
         AnalysisResult with bump, reasoning, and changes
     """
     log_group("Phase 1: Semantic Analysis")
-    base_ref = base_ref or base_version
-
-    # Use provided validation model or fall back to main model
-    val_model = validation_model if validation_model else model
     project_type = project_profile.project_type if project_profile else None
 
     # Check if we need map/reduce for large content_override
     if content_override and needs_chunking(content_override, threshold=2000):
         print(f"Large input detected ({len(content_override)} chars), using map/reduce")
 
-        # Create LLM caller for map phase (normal max_tokens)
-        def map_llm_caller(prompt: str) -> str:
-            response, _ = call_llm_with_retry(
-                model=model,
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-                debug=debug,
-                thinking=thinking,
-                extra_params=extra_params,
-            )
-            return response
-
-        # Create LLM caller for reduce phase (higher max_tokens to avoid truncation)
-        def reduce_llm_caller(prompt: str) -> str:
-            response, _ = call_llm_with_retry(
-                model=model,
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max(max_tokens, 8000),  # Higher limit for reduce phase
-                timeout=timeout,
-                debug=debug,
-                thinking=thinking,
-                extra_params=extra_params,
-            )
-            return response
-
-        # Process using map/reduce
         changes = process_large_input(
             content=content_override,
-            llm_caller=map_llm_caller,
-            reduce_llm_caller=reduce_llm_caller,
+            llm_caller=llm.caller(model),
+            # Higher limit for the reduce phase, to avoid truncation
+            reduce_llm_caller=llm.caller(model, max_tokens=max(llm.max_tokens, 8000)),
             chunk_size=2000,
             chunk_overlap=200,
         )
@@ -596,169 +522,37 @@ def run_phase1(
         else:
             print("Map/reduce returned no changes, falling back to normal processing")
 
-    # Normal processing path
     if content_override:
-        # Scan content for injection patterns (Layer 1 - pattern-based)
-        if validation_mode in (ValidationMode.BOTH, ValidationMode.PATTERN):
-            scan_result = scan_content_override(content_override)
-            handle_scan_result(scan_result)  # Raises on HIGH/CRITICAL
-
-            # For MEDIUM threats, optionally do LLM validation (Layer 2)
-            if validation_mode == ValidationMode.BOTH and scan_result.threat_level.value == "medium":
-                print("MEDIUM threat detected, performing LLM validation...")
-
-                def llm_validation_caller(prompt: str) -> str:
-                    response, _ = call_llm_with_retry(
-                        model=val_model,
-                        prompt=prompt,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        timeout=30,  # Shorter timeout for validation
-                        debug=debug,
-                        thinking=thinking,
-                        extra_params=extra_params,
-                    )
-                    return response
-
-                is_injection = validate_with_llm(content_override, llm_validation_caller)
-                if is_injection:
-                    raise ValueError("Content rejected: LLM validation detected prompt injection attempt")
-                print("LLM validation passed")
-
-            if scan_result.truncated:
-                content_override = truncate_for_context(content_override)
-        elif validation_mode == ValidationMode.LLM:
-            # LLM-only validation
-            print("Performing LLM-only validation...")
-
-            def llm_validation_caller(prompt: str) -> str:
-                response, _ = call_llm_with_retry(
-                    model=val_model,
-                    prompt=prompt,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    timeout=30,
-                    debug=debug,
-                    thinking=thinking,
-                    extra_params=extra_params,
-                )
-                return response
-
-            is_injection = validate_with_llm(content_override, llm_validation_caller)
-            if is_injection:
-                raise ValueError("Content rejected: LLM validation detected prompt injection attempt")
-            print("LLM validation passed")
-        # ValidationMode.NONE - skip all validation
-
-        # Phase 0: Flatten to net state
-        print("Phase 0: Flattening to net state...")
-
-        def flatten_llm_caller(prompt: str) -> str:
-            response, _ = call_llm_with_retry(
-                model=model,
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-                debug=debug,
-                thinking=thinking,
-                extra_params=extra_params,
-            )
-            return response
-
-        flattened_content = flatten_changes(content_override, flatten_llm_caller, project_type)
-        if flattened_content:
-            print(f"Flattened content ({len(flattened_content)} chars)")
-            content_override = flattened_content
-        else:
-            print("Flatten returned empty, using original content")
-
-        prompt = build_semantic_analysis_prompt(
-            commits=[],
-            base_version=base_version,
-            content_override=content_override,
-            context_content=context_content,
-            project_profile=project_profile,
-        )
+        # Raises on HIGH/CRITICAL threats
+        scan_result = scan_content_override(content_override)
+        handle_scan_result(scan_result)
+        if scan_result.truncated:
+            content_override = truncate_for_context(content_override)
+        source_text = content_override
     else:
-        # Phase 0: Flatten commits to net state
-        if commits:
-            print("Phase 0: Flattening commits to net state...")
+        source_text = "\n".join(f"{i + 1}. {c.hash}: {c.message}" for i, c in enumerate(commits))
 
-            # Format commits as text for flatten
-            commits_text = "\n".join(f"{i + 1}. {c.hash}: {c.message}" for i, c in enumerate(commits))
+    # Phase 0: Flatten to net state
+    flattened_content = ""
+    if source_text:
+        print("Phase 0: Flattening to net state...")
+        flattened_content = flatten_changes(source_text, llm.caller(model), project_type)
 
-            def flatten_llm_caller(prompt: str) -> str:
-                response, _ = call_llm_with_retry(
-                    model=model,
-                    prompt=prompt,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    timeout=timeout,
-                    debug=debug,
-                    thinking=thinking,
-                    extra_params=extra_params,
-                )
-                return response
+    if flattened_content:
+        print(f"Flattened content ({len(flattened_content)} chars)")
+        content_override = flattened_content
+    else:
+        print("Flatten returned empty, using original input")
 
-            flattened_content = flatten_changes(commits_text, flatten_llm_caller, project_type)
-            if flattened_content:
-                print(f"Flattened content ({len(flattened_content)} chars)")
-                # Use flattened content instead of raw commits
-                prompt = build_semantic_analysis_prompt(
-                    commits=[],
-                    base_version=base_version,
-                    content_override=flattened_content,
-                    context_content=context_content,
-                    project_profile=project_profile,
-                )
-            else:
-                print("Flatten returned empty, using original commits")
-                # Use structured diff analysis if available, otherwise use raw diffs
-                if diff_analysis_content:
-                    prompt = build_semantic_analysis_prompt(
-                        commits=commits,
-                        base_version=base_version,
-                        max_commits=max_commits,
-                        diff_analysis_content=diff_analysis_content,
-                        context_content=context_content,
-                        project_profile=project_profile,
-                    )
-                else:
-                    diff_patterns = [p.strip() for p in include_diffs.split(",") if p.strip()]
-                    prompt = build_semantic_analysis_prompt(
-                        commits=commits,
-                        base_version=base_version,
-                        max_commits=max_commits,
-                        diff_patterns=diff_patterns,
-                        base_ref=base_ref,
-                        head_ref=head_ref,
-                        context_content=context_content,
-                        project_profile=project_profile,
-                    )
-        else:
-            # Use structured diff analysis if available, otherwise use raw diffs
-            if diff_analysis_content:
-                prompt = build_semantic_analysis_prompt(
-                    commits=commits,
-                    base_version=base_version,
-                    max_commits=max_commits,
-                    diff_analysis_content=diff_analysis_content,
-                    context_content=context_content,
-                    project_profile=project_profile,
-                )
-            else:
-                diff_patterns = [p.strip() for p in include_diffs.split(",") if p.strip()]
-                prompt = build_semantic_analysis_prompt(
-                    commits=commits,
-                    base_version=base_version,
-                    max_commits=max_commits,
-                    diff_patterns=diff_patterns,
-                    base_ref=base_ref,
-                    head_ref=head_ref,
-                    context_content=context_content,
-                    project_profile=project_profile,
-                )
+    prompt = build_semantic_analysis_prompt(
+        commits=[] if content_override else commits,
+        base_version=base_version,
+        content_override=content_override,
+        max_commits=MAX_COMMITS,
+        diff_analysis_content=diff_analysis_content,
+        context_content=context_content,
+        project_profile=project_profile,
+    )
 
     print(f"Prompt built ({len(prompt)} chars)")
 
@@ -766,12 +560,10 @@ def run_phase1(
     response, usage = call_llm_with_retry(
         model=model,
         prompt=prompt,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=timeout,
-        debug=debug,
-        thinking=thinking,
-        extra_params=extra_params,
+        max_tokens=llm.max_tokens,
+        timeout=llm.timeout,
+        debug=llm.debug,
+        params=llm.params,
     )
 
     # Parse response
@@ -804,24 +596,13 @@ def validate_audience_changelog(
     )
 
 
-def get_default_preset(project_type: str) -> str:
-    """Preset for the default audience when no changelog_config is given."""
-    return "customer" if project_type == "app" else "developer"
-
-
 def run_phase2(
     model: str,
     changes: list[Change],
     changelog_config: ChangelogConfig,
     version: str,
     base_url: str | None,
-    temperature: float | None,
-    max_tokens: int,
-    timeout: int,
-    debug: bool,
-    thinking: str = "",
-    extra_params: dict[str, Any] | None = None,
-    project_type: str = "generic",
+    llm: LLMSettings,
 ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, dict]]]:
     """Run Phase 2: Changelog Generation (parallel execution).
 
@@ -831,11 +612,7 @@ def run_phase2(
         changelog_config: Audience configurations
         version: Version string for the release
         base_url: Optional repository URL for links
-        temperature: LLM temperature, or None to omit the parameter
-        max_tokens: Max response tokens
-        timeout: Request timeout
-        debug: Enable debug logging
-        project_type: Project type; selects the default audience when no config is given
+        llm: Settings shared by every LLM call
 
     Returns:
         Tuple of (changelogs dict, metadata dict)
@@ -846,13 +623,10 @@ def run_phase2(
     metadata: dict[str, dict[str, dict]] = {}
 
     if not changelog_config.audiences:
-        # Create default audience when no config provided. End-user apps get
-        # a user-facing changelog, everything else a developer one.
-        default_preset = get_default_preset(project_type)
-        print(f"No changelog_config provided, using default audience (preset: {default_preset})")
-        changelog_config = ChangelogConfig.from_yaml(f"""
+        print("No changelog_config provided, using default audience (preset: developer)")
+        changelog_config = ChangelogConfig.from_yaml("""
 default:
-  preset: {default_preset}
+  preset: developer
   languages: [en]
 """)
 
@@ -896,17 +670,7 @@ default:
         )
 
         def generate(task_prompt: str) -> tuple[str, ReleaseMetadata]:
-            response, _ = call_llm_with_retry(
-                model=model,
-                prompt=task_prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-                debug=debug,
-                thinking=thinking,
-                extra_params=extra_params,
-            )
-            return parse_phase2_response(response, config, language)
+            return parse_phase2_response(llm.caller(model)(task_prompt), config, language)
 
         changelog_content, release_metadata = generate(prompt)
 
@@ -1060,81 +824,42 @@ def run_phase3(
 
 def main() -> int:
     """Main entry point."""
-    debug = get_env_bool("INPUT_DEBUG", False)
+    # Set by GitHub when a run is re-run with debug logging enabled
+    debug = os.environ.get("RUNNER_DEBUG") == "1"
 
     try:
         # Parse inputs
         model = get_env("INPUT_MODEL")
-        model_analysis = os.environ.get("INPUT_MODEL_ANALYSIS", "")
-        model_changelog = os.environ.get("INPUT_MODEL_CHANGELOG", "")
-        current_version_input = os.environ.get("INPUT_CURRENT_VERSION", "")
-        head_ref = get_env("INPUT_HEAD_REF", "HEAD")
+        fast_model = os.environ.get("INPUT_FAST_MODEL", "").strip() or model
+        project_type_input = get_env("INPUT_PROJECT_TYPE", "auto").strip().lower() or "auto"
+        head_ref = os.environ.get("INPUT_HEAD_REF", "").strip() or "HEAD"
         base_ref_input = os.environ.get("INPUT_BASE_REF", "").strip()
-        tag_pattern = os.environ.get("INPUT_TAG_PATTERN", "").strip()
-        versioning = get_env("INPUT_VERSIONING", "semver").strip().lower() or "semver"
-        include_diffs = get_env("INPUT_INCLUDE_DIFFS", "**/openapi*.yaml,**/migrations/**,**/*.proto")
-        max_commits = get_env_int("INPUT_MAX_COMMITS", 50)
-        temperature = get_env_optional_float("INPUT_TEMPERATURE", None)
-        max_tokens = get_env_int("INPUT_MAX_TOKENS", 4000)
-        timeout = get_env_int("INPUT_TIMEOUT", 120)
-        temperature_str = os.environ.get("INPUT_TEMPERATURE", "")
-        thinking = os.environ.get("INPUT_THINKING", "").strip().lower()
-        extra_llm_params_str = os.environ.get("INPUT_EXTRA_LLM_PARAMS", "")
-        dry_run = get_env_bool("INPUT_DRY_RUN", False)
+        tag_pattern = os.environ.get("INPUT_TAG_PATTERN", "").strip() or DEFAULT_TAG_PATTERN
+        current_version_input = os.environ.get("INPUT_CURRENT_VERSION", "").strip()
         content_override = os.environ.get("INPUT_CONTENT_OVERRIDE", "")
         changelog_config_str = os.environ.get("INPUT_CHANGELOG_CONFIG", "")
-
-        # Project profiling settings
-        project_type_input = get_env("INPUT_PROJECT_TYPE", "auto").strip().lower() or "auto"
-        model_profile = get_env("INPUT_MODEL_PROFILE", "").strip() or model
-
-        # Context files settings
-        context_files_patterns = os.environ.get("INPUT_CONTEXT_FILES", "")
+        context_files_patterns = os.environ.get("INPUT_CONTEXT_FILES", DEFAULT_CONTEXT_FILES)
         context_max_tokens = get_env_int("INPUT_CONTEXT_MAX_TOKENS", 800)
-
-        # Diff analysis settings
-        analyze_diffs_enabled = get_env_bool("INPUT_ANALYZE_DIFFS", False)
-        diff_exclude_patterns = os.environ.get(
-            "INPUT_DIFF_EXCLUDE_PATTERNS",
-            "**/*.lock,**/package-lock.json,**/yarn.lock,**/pnpm-lock.yaml,**/*.min.js,**/*.min.css",
-        )
-        diff_max_files = get_env_int("INPUT_DIFF_MAX_FILES", 50)
-        diff_max_total_lines = get_env_int("INPUT_DIFF_MAX_TOTAL_LINES", 5000)
-
-        # Parse injection validation settings
-        validate_injections_str = os.environ.get("INPUT_VALIDATE_INJECTIONS", "pattern")
-        validation_model_str = os.environ.get("INPUT_VALIDATION_MODEL", "")
-        validation_mode = parse_validation_mode(validate_injections_str)
-        validation_model = validation_model_str if validation_model_str else model
-
-        # Configure per-phase models
-        model_config = ModelConfig.from_env(
-            model=model,
-            model_analysis=model_analysis if model_analysis else None,
-            model_changelog=model_changelog if model_changelog else None,
-        )
+        diff_patterns = os.environ.get("INPUT_DIFFS", DEFAULT_DIFF_PATTERNS)
+        diff_max_lines = get_env_int("INPUT_DIFF_MAX_LINES", 5000)
+        llm_params_str = os.environ.get("INPUT_LLM_PARAMS", "")
+        max_tokens = get_env_int("INPUT_MAX_TOKENS", 4000)
+        timeout = get_env_int("INPUT_TIMEOUT", 120)
 
         # Validate inputs
         log_group("Validating inputs")
         validation_result = validate_inputs(
-            current_version=current_version_input if current_version_input else None,
+            current_version=current_version_input or None,
             head_ref=head_ref,
-            versioning=versioning,
             base_ref=base_ref_input,
             tag_pattern=tag_pattern,
-            content_override=content_override if content_override else None,
-            changelog_config=changelog_config_str if changelog_config_str else None,
-            include_diffs=include_diffs,
-            validation_mode=validation_mode,
-            context_files=context_files_patterns if context_files_patterns else None,
+            content_override=content_override or None,
+            changelog_config=changelog_config_str or None,
+            context_files=context_files_patterns or None,
             context_max_tokens=str(context_max_tokens),
-            analyze_diffs=str(analyze_diffs_enabled).lower() if analyze_diffs_enabled else None,
-            diff_exclude_patterns=diff_exclude_patterns if diff_exclude_patterns else None,
-            diff_max_files=str(diff_max_files),
-            diff_max_total_lines=str(diff_max_total_lines),
-            temperature=temperature_str,
-            thinking=thinking,
-            extra_llm_params=extra_llm_params_str,
+            diffs=diff_patterns or None,
+            diff_max_lines=str(diff_max_lines),
+            llm_params=llm_params_str,
             project_type=project_type_input,
         )
 
@@ -1147,7 +872,12 @@ def main() -> int:
         log_group_end()
 
         # Safe to parse now that validate_inputs has vetted the JSON
-        extra_llm_params = parse_extra_llm_params(extra_llm_params_str)
+        llm = LLMSettings(
+            max_tokens=max_tokens,
+            timeout=timeout,
+            params=parse_llm_params(llm_params_str),
+            debug=debug,
+        )
 
         # Parse changelog config
         changelog_config = ChangelogConfig.from_yaml(changelog_config_str)
@@ -1156,7 +886,11 @@ def main() -> int:
         use_content_override = bool(content_override.strip())
         commits: list[CommitInfo] = []
 
-        # Where the analyzed range starts (a git ref) and, with semver, the version to bump
+        # Initialize warnings collection
+        all_warnings: list[str] = []
+
+        # Where the analyzed range starts (a git ref, empty for the whole
+        # history) and the version to bump, when there is one
         base_ref = ""
         current_version: SemanticVersion | None = None
 
@@ -1164,12 +898,7 @@ def main() -> int:
             log_group("Using content override")
             print(f"Content override provided ({len(content_override)} chars)")
             log_group_end()
-
-            if versioning == "semver":
-                # For content override, current_version is required
-                if not current_version_input:
-                    log_error("current_version is required when using content_override")
-                    return 1
+            if current_version_input:
                 current_version = parse_version(current_version_input)
         else:
             log_group("Validating git environment")
@@ -1181,7 +910,6 @@ def main() -> int:
 
             try:
                 release_range = resolve_release_range(
-                    versioning=versioning,
                     head_ref=head_ref,
                     base_ref=base_ref_input,
                     current_version=current_version_input,
@@ -1192,7 +920,12 @@ def main() -> int:
                 return 1
             base_ref = release_range.base_ref
             current_version = release_range.version
-            print(f"Comparing {base_ref}..{head_ref}")
+            if base_ref:
+                print(f"Comparing {base_ref}..{head_ref}")
+            else:
+                warning = f"No tag matching '{tag_pattern}' before {head_ref}: analyzing its whole history"
+                log_warning(warning)
+                all_warnings.append(warning)
             if current_version:
                 print(f"Current version: {current_version}")
             log_group_end()
@@ -1205,30 +938,17 @@ def main() -> int:
             print(f"Found {len(commits)} commits")
             log_group_end()
 
+        if not current_version:
+            print("::notice::No semver version to bump from, so next_version is empty. Set current_version to get one.")
+
         # How the starting point is named in prompts and the current_version output
         base_label = str(current_version) if current_version else base_ref or "previous release"
 
         # Get repository URL for links
         base_url = get_repository_url()
 
-        # Initialize warnings collection
-        all_warnings: list[str] = []
-
         # === Project Profile ===
         log_group("Project profile")
-
-        def profile_llm_caller(prompt: str) -> str:
-            response, _ = call_llm_with_retry(
-                model=model_profile,
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout,
-                debug=debug,
-                thinking=thinking,
-                extra_params=extra_llm_params,
-            )
-            return response
 
         try:
             if use_content_override and project_type_input == "auto":
@@ -1238,7 +958,7 @@ def main() -> int:
                     source="default",
                 )
             else:
-                project_profile = resolve_project_profile(project_type_input, profile_llm_caller, root_dir=".")
+                project_profile = resolve_project_profile(project_type_input, llm.caller(fast_model), root_dir=".")
         except Exception as e:
             # Profiling is best effort: fall back to the generic rules
             log_warning(f"Project profiling failed, using generic rules: {e}")
@@ -1261,24 +981,10 @@ def main() -> int:
         if context_files_patterns.strip():
             log_group("Loading context files")
 
-            # Create LLM caller for context summarization (if needed)
-            def context_llm_caller(prompt: str) -> str:
-                response, _ = call_llm_with_retry(
-                    model=model_config.get_analysis_model(),
-                    prompt=prompt,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    timeout=timeout,
-                    debug=debug,
-                    thinking=thinking,
-                    extra_params=extra_llm_params,
-                )
-                return response
-
             context_result = load_context_files(
                 patterns=context_files_patterns,
                 max_tokens=context_max_tokens,
-                llm_caller=context_llm_caller,
+                llm_caller=llm.caller(fast_model),
                 root_dir=".",
             )
 
@@ -1297,114 +1003,55 @@ def main() -> int:
 
             log_group_end()
 
-        # === Diff Analysis (structured) ===
+        changed_files = [] if use_content_override else get_changed_files(base_ref, head_ref)
+
+        # === Diff Analysis ===
         diff_analysis_content: str | None = None
+        diff_paths = select_paths(changed_files, diff_patterns) if diff_patterns.strip() else []
 
-        if analyze_diffs_enabled and not use_content_override:
-            log_group("Analyzing diffs (structured)")
+        if diff_paths:
+            log_group("Analyzing diffs")
+            diff_result = analyze_diffs(
+                diff_text=get_diff(base_ref, head_ref, diff_paths),
+                patterns=diff_patterns,
+                max_lines=diff_max_lines,
+                llm_caller=llm.caller(fast_model),
+            )
+            if diff_result.extracted_changes:
+                diff_analysis_content = diff_result.extracted_changes
+                print(f"Processed {diff_result.diffs_processed} files, {diff_result.total_lines} lines")
 
-            # Get raw diff from git
-            try:
-                import subprocess
-
-                diff_result = subprocess.run(
-                    ["git", "diff", base_ref, head_ref],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                raw_diff = diff_result.stdout
-
-                if raw_diff.strip():
-                    # Create LLM caller for the MAP phase
-                    def diff_llm_caller(prompt: str) -> str:
-                        response, _ = call_llm_with_retry(
-                            model=model_config.get_analysis_model(),
-                            prompt=prompt,
-                            temperature=temperature,
-                            max_tokens=max_tokens,
-                            timeout=timeout,
-                            debug=debug,
-                            thinking=thinking,
-                            extra_params=extra_llm_params,
-                        )
-                        return response
-
-                    # Analyze diffs
-                    diff_result_obj = analyze_diffs(
-                        diff_text=raw_diff,
-                        exclude_patterns=diff_exclude_patterns,
-                        max_files=diff_max_files,
-                        max_lines=diff_max_total_lines,
-                        llm_caller=diff_llm_caller,
-                    )
-
-                    if diff_result_obj.extracted_changes:
-                        diff_analysis_content = diff_result_obj.extracted_changes
-                        print(f"Processed {diff_result_obj.diffs_processed} files, {diff_result_obj.total_lines} lines")
-
-                    # Collect warnings from diff analysis
-                    all_warnings.extend(diff_result_obj.warnings)
-                    for warning in diff_result_obj.warnings:
-                        log_warning(warning)
-                else:
-                    print("No diff content found between versions")
-
-            except subprocess.CalledProcessError as e:
-                log_warning(f"Failed to get git diff: {e.stderr}")
-
+            # Collect warnings from diff analysis
+            all_warnings.extend(diff_result.warnings)
+            for warning in diff_result.warnings:
+                log_warning(warning)
             log_group_end()
 
         # === PHASE 1: Semantic Analysis ===
         analysis_result = run_phase1(
-            model=model_config.get_analysis_model(),
+            model=model,
             commits=commits,
             base_version=base_label,
-            base_ref=base_ref,
             content_override=content_override if use_content_override else None,
-            max_commits=max_commits,
-            include_diffs=include_diffs,
-            head_ref=head_ref,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=timeout,
-            debug=debug,
-            validation_mode=validation_mode,
-            validation_model=validation_model,
+            llm=llm,
             context_content=context_content,
             diff_analysis_content=diff_analysis_content,
-            thinking=thinking,
-            extra_params=extra_llm_params,
             project_profile=project_profile,
         )
 
         # === Staleness Detection ===
-        if context_content and not use_content_override:
-            # Get list of changed files from git
-            try:
-                import subprocess
-
-                result = subprocess.run(
-                    ["git", "diff", "--name-only", base_ref, head_ref],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                changed_files = [f.strip() for f in result.stdout.split("\n") if f.strip()]
-                if changed_files:
-                    staleness_warnings = detect_staleness(context_content, changed_files)
-                    all_warnings.extend(staleness_warnings)
-                    for warning in staleness_warnings:
-                        log_warning(warning)
-            except subprocess.CalledProcessError:
-                # Skip staleness detection if git command fails
-                pass
+        # Only for context the workflow chose: a README rarely covers every area
+        if context_content and changed_files and context_files_patterns != DEFAULT_CONTEXT_FILES:
+            staleness_warnings = detect_staleness(context_content, changed_files)
+            all_warnings.extend(staleness_warnings)
+            for warning in staleness_warnings:
+                log_warning(warning)
 
         # Guard: Warn if Phase 1 produced no changes
         if not analysis_result.changes:
             log_warning("Phase 1 produced no changes - changelog will be empty")
 
-        # Calculate next version (none without semver) and the name the changelogs use
+        # Calculate next version (none without a version to bump) and the name the changelogs use
         next_version = str(current_version.bump(analysis_result.bump)) if current_version else ""
         if next_version:
             release_label = next_version
@@ -1415,18 +1062,12 @@ def main() -> int:
 
         # === PHASE 2: Changelog Generation ===
         changelogs, metadata = run_phase2(
-            model=model_config.get_changelog_model(),
+            model=model,
             changes=analysis_result.changes,
             changelog_config=changelog_config,
             version=release_label,
             base_url=base_url,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=timeout,
-            debug=debug,
-            thinking=thinking,
-            extra_params=extra_llm_params,
-            project_type=project_profile.project_type,
+            llm=llm,
         )
 
         # === PHASE 3: Validation ===
@@ -1483,10 +1124,8 @@ def main() -> int:
             print(f"Warnings: {len(all_warnings)}")
 
         print(f"Current version: {base_label}")
-        print(f"Next version: {next_version or '(versioning: none)'}")
+        print(f"Next version: {next_version or '(none)'}")
         print(f"Release name: {release_label}")
-        if dry_run:
-            print("(dry-run mode - no version will be created)")
 
         log_group_end()
         return 0

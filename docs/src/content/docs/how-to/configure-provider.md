@@ -63,4 +63,4 @@ environment variables listed on its [LiteLLM provider page](https://docs.litellm
 
 See [Supported providers and models](/llm-release-action/reference/providers/) for
 recommended models, and [Tune models and cost](/llm-release-action/how-to/tune-models-and-cost/)
-to use different models per phase.
+to use a cheaper model for internal calls.

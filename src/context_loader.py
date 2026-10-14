@@ -90,6 +90,10 @@ DEFAULT_EXCLUSIONS = [
 ]
 
 
+# Root README only: a bare "README.md" would also match vendored dependencies
+DEFAULT_CONTEXT_FILES = "/README.md"
+
+
 @dataclass
 class ContextResult:
     """Result of loading context files."""

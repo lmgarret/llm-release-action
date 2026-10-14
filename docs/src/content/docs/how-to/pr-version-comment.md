@@ -1,6 +1,6 @@
 ---
 title: Comment the suggested version on pull requests
-description: Run the action in dry-run mode on every pull request and post or update a comment with the suggested bump and reasoning.
+description: Run the action on every pull request and post or update a comment with the suggested bump and reasoning.
 sidebar:
   order: 2
 ---
@@ -27,7 +27,6 @@ jobs:
         id: semver
         with:
           model: anthropic/claude-sonnet-5
-          dry_run: true
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 

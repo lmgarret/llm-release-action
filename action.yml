@@ -8,61 +8,58 @@ branding:
 
 inputs:
   model:
-    description: 'Default LiteLLM model string (e.g., anthropic/claude-sonnet-5)'
+    description: 'LiteLLM model string (e.g., anthropic/claude-sonnet-5) for the analysis and the changelogs'
     required: true
-  model_analysis:
-    description: 'Optional model for Phase 1 semantic analysis. Falls back to model if not set.'
-    required: false
-    default: ''
-  model_changelog:
-    description: 'Optional model for Phase 2 changelog generation. Falls back to model if not set.'
-    required: false
-    default: ''
-  model_profile:
-    description: 'Optional model for project type detection (a small model is enough). Falls back to model if not set.'
+  fast_model:
+    description: 'Optional cheaper model for internal calls: project type detection, context summarization and diff extraction. Falls back to model if not set.'
     required: false
     default: ''
   project_type:
-    description: 'Who consumes the project, which decides what counts as a breaking change: auto (detect from README and project files), library, api, service, app, or generic (type-agnostic rules). With app and no changelog_config, the default changelog is user-facing.'
+    description: 'Who consumes the project, which decides what counts as a breaking change: auto (detect from README and project files), library, api, service, app, or generic (type-agnostic rules).'
     required: false
     default: 'auto'
-  current_version:
-    description: 'Current semver version to bump from. Also the ref to compare from when base_ref is not set. Auto-detects from latest semver tag if not provided.'
-    required: false
   head_ref:
     description: 'Head ref to compare to'
     required: false
     default: 'HEAD'
   base_ref:
-    description: 'Git ref (tag, SHA or branch) to compare from. Overrides current_version and tag detection for the range; with semver, the version still comes from current_version or the nearest semver tag.'
+    description: 'Git ref (tag, SHA or branch) to compare from. Default: the nearest tag matching tag_pattern before head_ref, or the whole history when there is none (first release).'
     required: false
     default: ''
   tag_pattern:
-    description: 'Glob matching release tags (e.g. demo-*). When base_ref is not set, the range starts at the nearest matching tag before head_ref.'
+    description: 'Glob matching release tags, used to find the previous release when base_ref is not set (e.g. demo-*).'
+    required: false
+    default: 'v[0-9]*.[0-9]*.[0-9]*'
+  current_version:
+    description: 'Version to bump from. Default: the base tag, when it is a semver version. Without either, next_version is empty. Never changes the compared range.'
     required: false
     default: ''
-  versioning:
-    description: 'semver (default) computes next_version from the suggested bump. none skips version calculation, for repos whose tags are not semver (e.g. timestamps); next_version is then empty.'
+  content_override:
+    description: 'Markdown content to analyze instead of git history (multi-repo). Cannot be combined with base_ref, head_ref, tag_pattern or diffs. Format: ## Repo\n### Features\n- item. See https://lmgarret.github.io/llm-release-action/how-to/combine-repositories/'
     required: false
-    default: 'semver'
-  include_diffs:
-    description: 'File patterns to include in diff analysis (comma-separated)'
+    default: ''
+  changelog_config:
+    description: 'YAML config for audiences. Format: {audience: {preset, languages, tone, ...}}. Presets: developer, customer, executive, marketing, security, ops. Default: one developer changelog. See https://lmgarret.github.io/llm-release-action/reference/changelog-config/'
+    required: false
+    default: ''
+  context_files:
+    description: 'Comma-separated file patterns for project context (gitignore-style, supports negation), e.g. "/README.md,docs/API.md" or "**/README.md,!**/node_modules/**". Default: the root README. Empty disables context.'
+    required: false
+    default: '/README.md'
+  context_max_tokens:
+    description: 'Maximum tokens for context content (increase for large-context models)'
+    required: false
+    default: '800'
+  diffs:
+    description: 'Comma-separated file patterns (gitignore-style, supports negation) whose diffs are analyzed for API, schema and other changes commit messages may not mention. Empty disables diff analysis.'
     required: false
     default: '**/openapi*.yaml,**/migrations/**,**/*.proto'
-  max_commits:
-    description: 'Maximum recent commits to include in full'
+  diff_max_lines:
+    description: 'Maximum total changed lines analyzed across all diffs. Higher-priority files (API specs, migrations, config) come first.'
     required: false
-    default: '50'
-  temperature:
-    description: 'LLM temperature. Sent only when set; many current models (Sonnet 5+, Opus 4.7+, Haiku 5.5) reject it.'
-    required: false
-    default: ''
-  thinking:
-    description: "Sent only when set: 'adaptive' sends {type: adaptive}, 'off' sends {type: disabled}. Some models reject 'off'."
-    required: false
-    default: ''
-  extra_llm_params:
-    description: 'JSON object merged into every LLM call (last, so it overrides other inputs), e.g. ''{"reasoning_effort": "low"}''. The action passes parameters through as configured and does not check what a model accepts.'
+    default: '5000'
+  llm_params:
+    description: 'JSON object merged into every LLM call, e.g. ''{"temperature": 0.2}'', ''{"thinking": {"type": "adaptive"}}'' or ''{"reasoning_effort": "low"}''. Passed through as configured; the action does not check what a model accepts.'
     required: false
     default: ''
   max_tokens:
@@ -73,64 +70,16 @@ inputs:
     description: 'Request timeout in seconds'
     required: false
     default: '120'
-  debug:
-    description: 'Enable verbose debug logging'
-    required: false
-    default: 'false'
-  dry_run:
-    description: 'Perform analysis without suggesting version'
-    required: false
-    default: 'false'
-  content_override:
-    description: 'Markdown content for multi-repo analysis (bypasses git). Format: ## Repo\n### Features\n- item. See https://lmgarret.github.io/llm-release-action/how-to/combine-repositories/'
-    required: false
-    default: ''
-  changelog_config:
-    description: 'YAML config for audiences. Format: {audience: {preset, languages, tone, ...}}. Presets: developer, customer, executive, marketing, security, ops. See https://lmgarret.github.io/llm-release-action/reference/changelog-config/'
-    required: false
-    default: ''
-  validate_injections:
-    description: 'Prompt injection validation mode for content_override. "pattern" = regex only (default), "both" = pattern + LLM, "llm" = LLM only, "none" = disabled. Commit messages, context files and diffs are not scanned; all untrusted text is embedded in prompts as marked data regardless of this setting.'
-    required: false
-    default: 'pattern'
-  validation_model:
-    description: 'Optional model for injection validation LLM checks. Falls back to model if not set.'
-    required: false
-    default: ''
-  context_files:
-    description: 'Comma-separated file patterns for project context (gitignore-style, supports negation). Examples: "README.md", "README.md,docs/API.md", "**/README.md,!**/node_modules/**"'
-    required: false
-    default: ''
-  context_max_tokens:
-    description: 'Maximum tokens for context content (increase for large-context models like Claude or GPT-4)'
-    required: false
-    default: '800'
-  analyze_diffs:
-    description: 'Enable diff analysis step to extract structured changes from file diffs'
-    required: false
-    default: 'false'
-  diff_exclude_patterns:
-    description: 'Comma-separated gitignore-style patterns for files to exclude from diff analysis'
-    required: false
-    default: '**/*.lock,**/package-lock.json,**/yarn.lock,**/Cargo.lock,**/poetry.lock,**/vendor/**,**/node_modules/**,**/*.generated.*,**/generated/**,**/*.min.js,**/*.min.css'
-  diff_max_files:
-    description: 'Maximum number of files to include in diff analysis'
-    required: false
-    default: '50'
-  diff_max_total_lines:
-    description: 'Maximum total lines of diff content to analyze'
-    required: false
-    default: '5000'
 
 outputs:
   bump:
     description: 'Bump type (major, minor, patch)'
     value: ${{ steps.analyze.outputs.bump }}
   current_version:
-    description: 'The version compared from (the base ref with versioning none)'
+    description: 'The version compared from, or the base ref when there is no version'
     value: ${{ steps.analyze.outputs.current_version }}
   next_version:
-    description: 'Calculated next semantic version (empty with versioning none)'
+    description: 'Calculated next semantic version (empty when there is no version to bump from)'
     value: ${{ steps.analyze.outputs.next_version }}
   release_name:
     description: 'Name of the release used in changelogs'
@@ -193,34 +142,21 @@ runs:
       shell: bash
       env:
         INPUT_MODEL: ${{ inputs.model }}
-        INPUT_MODEL_ANALYSIS: ${{ inputs.model_analysis }}
-        INPUT_MODEL_CHANGELOG: ${{ inputs.model_changelog }}
-        INPUT_MODEL_PROFILE: ${{ inputs.model_profile }}
+        INPUT_FAST_MODEL: ${{ inputs.fast_model }}
         INPUT_PROJECT_TYPE: ${{ inputs.project_type }}
-        INPUT_CURRENT_VERSION: ${{ inputs.current_version }}
         INPUT_HEAD_REF: ${{ inputs.head_ref }}
         INPUT_BASE_REF: ${{ inputs.base_ref }}
         INPUT_TAG_PATTERN: ${{ inputs.tag_pattern }}
-        INPUT_VERSIONING: ${{ inputs.versioning }}
-        INPUT_INCLUDE_DIFFS: ${{ inputs.include_diffs }}
-        INPUT_MAX_COMMITS: ${{ inputs.max_commits }}
-        INPUT_TEMPERATURE: ${{ inputs.temperature }}
-        INPUT_THINKING: ${{ inputs.thinking }}
-        INPUT_EXTRA_LLM_PARAMS: ${{ inputs.extra_llm_params }}
-        INPUT_MAX_TOKENS: ${{ inputs.max_tokens }}
-        INPUT_TIMEOUT: ${{ inputs.timeout }}
-        INPUT_DEBUG: ${{ inputs.debug }}
-        INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        INPUT_CURRENT_VERSION: ${{ inputs.current_version }}
         INPUT_CONTENT_OVERRIDE: ${{ inputs.content_override }}
         INPUT_CHANGELOG_CONFIG: ${{ inputs.changelog_config }}
-        INPUT_VALIDATE_INJECTIONS: ${{ inputs.validate_injections }}
-        INPUT_VALIDATION_MODEL: ${{ inputs.validation_model }}
         INPUT_CONTEXT_FILES: ${{ inputs.context_files }}
         INPUT_CONTEXT_MAX_TOKENS: ${{ inputs.context_max_tokens }}
-        INPUT_ANALYZE_DIFFS: ${{ inputs.analyze_diffs }}
-        INPUT_DIFF_EXCLUDE_PATTERNS: ${{ inputs.diff_exclude_patterns }}
-        INPUT_DIFF_MAX_FILES: ${{ inputs.diff_max_files }}
-        INPUT_DIFF_MAX_TOTAL_LINES: ${{ inputs.diff_max_total_lines }}
+        INPUT_DIFFS: ${{ inputs.diffs }}
+        INPUT_DIFF_MAX_LINES: ${{ inputs.diff_max_lines }}
+        INPUT_LLM_PARAMS: ${{ inputs.llm_params }}
+        INPUT_MAX_TOKENS: ${{ inputs.max_tokens }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
         UV_PROJECT: ${{ github.action_path }}
         UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/llm-release-action-venv
         UV_PYTHON: ${{ steps.python.outputs.python-path }}

@@ -20,16 +20,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from content_scanner import (
     ScanResult,
     ThreatLevel,
-    ValidationMode,
     detect_context_attacks,
     detect_encoding_tricks,
     estimate_tokens,
     handle_scan_result,
-    parse_validation_mode,
     sanitize_content,
     scan_content_override,
     validate_response,
-    validate_with_llm,
 )
 
 
@@ -268,70 +265,6 @@ class TestHandleScanResult:
         handle_scan_result(result)
 
 
-class TestValidateWithLlm:
-    """Tests for validate_with_llm function."""
-
-    def test_returns_true_on_yes(self) -> None:
-        """LLM returning 'YES' should indicate injection."""
-
-        def mock_llm(prompt: str) -> str:
-            return "YES"
-
-        result = validate_with_llm("some content", mock_llm)
-        assert result is True
-
-    def test_returns_true_on_yes_with_explanation(self) -> None:
-        """LLM returning 'YES, this is...' should indicate injection."""
-
-        def mock_llm(prompt: str) -> str:
-            return "YES, this appears to be a prompt injection attempt."
-
-        result = validate_with_llm("some content", mock_llm)
-        assert result is True
-
-    def test_returns_false_on_no(self) -> None:
-        """LLM returning 'NO' should indicate clean."""
-
-        def mock_llm(prompt: str) -> str:
-            return "NO"
-
-        result = validate_with_llm("normal content", mock_llm)
-        assert result is False
-
-    def test_returns_false_on_no_with_explanation(self) -> None:
-        """LLM returning 'NO, this is...' should indicate clean."""
-
-        def mock_llm(prompt: str) -> str:
-            return "NO, this is normal changelog content."
-
-        result = validate_with_llm("normal content", mock_llm)
-        assert result is False
-
-    def test_truncates_long_content(self) -> None:
-        """Long content should be truncated before sending to LLM."""
-        captured_prompt = []
-
-        def mock_llm(prompt: str) -> str:
-            captured_prompt.append(prompt)
-            return "NO"
-
-        long_content = "A" * 1000
-        validate_with_llm(long_content, mock_llm, max_chars=500)
-
-        # The text in the prompt should be truncated
-        assert len(captured_prompt) == 1
-        # The prompt includes template text, so just check the A's are truncated
-        assert "A" * 500 in captured_prompt[0]
-        assert "A" * 600 not in captured_prompt[0]
-
-    def test_case_insensitive(self) -> None:
-        """YES/NO detection should be case insensitive."""
-        assert validate_with_llm("x", lambda p: "yes") is True
-        assert validate_with_llm("x", lambda p: "Yes") is True
-        assert validate_with_llm("x", lambda p: "no") is False
-        assert validate_with_llm("x", lambda p: "No") is False
-
-
 class TestValidateResponse:
     """Tests for validate_response function."""
 
@@ -366,36 +299,6 @@ class TestValidateResponse:
 """
         issues = validate_response(response)
         assert len(issues) == 0
-
-
-class TestParseValidationMode:
-    """Tests for parse_validation_mode function."""
-
-    def test_parses_both(self) -> None:
-        assert parse_validation_mode("both") == ValidationMode.BOTH
-        assert parse_validation_mode("BOTH") == ValidationMode.BOTH
-        assert parse_validation_mode("Both") == ValidationMode.BOTH
-
-    def test_parses_pattern(self) -> None:
-        assert parse_validation_mode("pattern") == ValidationMode.PATTERN
-        assert parse_validation_mode("PATTERN") == ValidationMode.PATTERN
-
-    def test_parses_llm(self) -> None:
-        assert parse_validation_mode("llm") == ValidationMode.LLM
-        assert parse_validation_mode("LLM") == ValidationMode.LLM
-
-    def test_parses_none(self) -> None:
-        assert parse_validation_mode("none") == ValidationMode.NONE
-        assert parse_validation_mode("NONE") == ValidationMode.NONE
-
-    def test_raises_on_invalid(self) -> None:
-        with pytest.raises(ValueError) as exc_info:
-            parse_validation_mode("invalid")
-        assert "Invalid validate_injections mode" in str(exc_info.value)
-
-    def test_handles_whitespace(self) -> None:
-        assert parse_validation_mode("  both  ") == ValidationMode.BOTH
-        assert parse_validation_mode("pattern ") == ValidationMode.PATTERN
 
 
 class TestContextAttackDetection:

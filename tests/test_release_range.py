@@ -67,56 +67,60 @@ class TestDetectPreviousTag:
         assert detect_previous_tag("prod-*", "HEAD") is None
 
 
-class TestResolveReleaseRangeNone:
-    def test_detects_previous_tag_by_pattern(self, repo):
-        result = resolve_release_range("none", "HEAD", tag_pattern="demo-*")
+class TestResolveReleaseRange:
+    def test_default_detects_previous_semver_tag(self, repo):
+        result = resolve_release_range("HEAD")
+        assert result.base_ref == "v1.0.0"
+        assert result.version == SemanticVersion(1, 0, 0)
+
+    def test_default_ignores_floating_major_tags(self, repo):
+        # The release workflow moves v1 to each release; it is not a release tag
+        _run(repo, "git", "tag", "v1", "demo-202610080900")
+        assert resolve_release_range("HEAD").base_ref == "v1.0.0"
+
+    def test_tag_on_head_is_skipped(self, repo):
+        # A run triggered by pushing v1.1.0 compares against the previous release
+        _run(repo, "git", "tag", "v1.1.0")
+        assert resolve_release_range("HEAD").base_ref == "v1.0.0"
+
+    def test_non_semver_tags_have_no_version(self, repo):
+        result = resolve_release_range("HEAD", tag_pattern="demo-*")
         assert result.base_ref == "demo-202610080900"
         assert result.version is None
-
-    def test_any_tag_without_pattern(self, repo):
-        assert resolve_release_range("none", "HEAD").base_ref == "demo-202610080900"
 
     def test_base_ref_can_be_a_sha(self, repo):
         sha = _run(repo, "git", "rev-parse", "v1.0.0")
-        result = resolve_release_range("none", "HEAD", base_ref=sha)
+        result = resolve_release_range("HEAD", base_ref=sha)
         assert result.base_ref == sha
         assert result.version is None
 
-    def test_error_when_no_tag_matches(self, repo):
-        with pytest.raises(ValueError, match="No tag matching 'prod-\\*'"):
-            resolve_release_range("none", "HEAD", tag_pattern="prod-*")
-
-
-class TestResolveReleaseRangeSemver:
-    def test_default_detects_latest_semver_tag(self, repo):
-        result = resolve_release_range("semver", "HEAD")
-        assert result.base_ref == "v1.0.0"
+    def test_semver_base_ref_gives_version(self, repo):
+        result = resolve_release_range("HEAD", base_ref="v1.0.0")
         assert result.version == SemanticVersion(1, 0, 0)
 
-    def test_current_version_is_both_ref_and_version(self, repo):
-        result = resolve_release_range("semver", "HEAD", current_version="v1.0.0")
-        assert result.base_ref == "v1.0.0"
-        assert result.version == SemanticVersion(1, 0, 0)
-
-    def test_non_semver_base_ref_uses_nearest_semver_tag_for_version(self, repo):
-        result = resolve_release_range("semver", "HEAD", base_ref="demo-202610080900")
-        assert result.base_ref == "demo-202610080900"
-        assert result.version == SemanticVersion(1, 0, 0)
-
-    def test_current_version_overrides_derived_version(self, repo):
-        result = resolve_release_range("semver", "HEAD", base_ref="demo-202610080900", current_version="v2.3.0")
+    def test_current_version_sets_version_not_range(self, repo):
+        result = resolve_release_range("HEAD", base_ref="demo-202610080900", current_version="v2.3.0")
         assert result.base_ref == "demo-202610080900"
         assert result.version == SemanticVersion(2, 3, 0)
 
-    def test_tag_pattern_with_semver(self, repo):
-        result = resolve_release_range("semver", "HEAD", tag_pattern="demo-*")
-        assert result.base_ref == "demo-202610080900"
-        assert result.version == SemanticVersion(1, 0, 0)
+    def test_current_version_overrides_tag_version(self, repo):
+        result = resolve_release_range("HEAD", current_version="v2.3.0")
+        assert result.base_ref == "v1.0.0"
+        assert result.version == SemanticVersion(2, 3, 0)
 
-    def test_error_when_no_semver_tag_precedes_base(self, repo):
-        _run(repo, "git", "tag", "-d", "v1.0.0")
-        with pytest.raises(ValueError, match="versioning: none"):
-            resolve_release_range("semver", "HEAD", base_ref="demo-202610080900")
+    def test_no_tag_means_whole_history(self, repo):
+        result = resolve_release_range("HEAD", tag_pattern="prod-*")
+        assert result.base_ref == ""
+        assert result.version is None
+
+    def test_first_release_with_current_version(self, repo):
+        result = resolve_release_range("HEAD", tag_pattern="prod-*", current_version="v0.0.0")
+        assert result.base_ref == ""
+        assert result.version == SemanticVersion(0, 0, 0)
+
+    def test_missing_base_ref_is_an_error(self, repo):
+        with pytest.raises(ValueError, match="does not exist"):
+            resolve_release_range("HEAD", base_ref="v9.9.9")
 
 
 class TestResolveReleaseLabel:
@@ -133,16 +137,8 @@ class TestResolveReleaseLabel:
 
 class TestValidation:
     def test_accepts_timestamp_setup(self, repo):
-        result = validate_inputs(versioning="none", base_ref="demo-202610080900", tag_pattern="demo-*")
+        result = validate_inputs(base_ref="demo-202610080900", tag_pattern="demo-*")
         assert result.valid, result.errors
-
-    def test_rejects_unknown_versioning(self, repo):
-        result = validate_inputs(versioning="calver")
-        assert any("Invalid versioning" in e for e in result.errors)
-
-    def test_rejects_current_version_without_semver(self, repo):
-        result = validate_inputs(versioning="none", current_version="v1.0.0")
-        assert any("base_ref" in e for e in result.errors)
 
     @pytest.mark.parametrize("name", ["base_ref", "head_ref", "tag_pattern"])
     def test_rejects_option_like_refs(self, repo, name):

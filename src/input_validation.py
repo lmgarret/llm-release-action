@@ -14,9 +14,10 @@ import regex
 import yaml
 
 from config import validate_changelog_config
-from content_scanner import ValidationMode, handle_scan_result, scan_content_override
+from content_scanner import handle_scan_result, scan_content_override
+from diff_analyzer import DEFAULT_DIFF_PATTERNS
 from project_profile import VALID_PROJECT_TYPE_INPUTS
-from version import VERSIONING_SCHEMES
+from version import DEFAULT_TAG_PATTERN
 
 # Maximum pattern length to reduce ReDoS attack surface
 MAX_PATTERN_LENGTH = 200
@@ -215,15 +216,6 @@ def validate_git_ref(value: str, name: str) -> list[str]:
     return []
 
 
-def validate_versioning(value: str, current_version: str | None) -> list[str]:
-    """Validate the versioning scheme and that current_version is only used with semver."""
-    if value not in VERSIONING_SCHEMES:
-        return [f"Invalid versioning: '{value}'. Valid values: {', '.join(VERSIONING_SCHEMES)}"]
-    if value == "none" and current_version:
-        return ["current_version only applies to versioning: semver. Use base_ref to set where the range starts."]
-    return []
-
-
 def validate_language_code(code: str) -> list[str]:
     """Validate a language code against BCP 47 standard.
 
@@ -316,27 +308,6 @@ def validate_filter_value(value: str, field_name: str, is_pattern: bool = False)
             errors.append(f"{field_name}: {err}")
 
     return errors
-
-
-def validate_glob_pattern(pattern: str) -> bool:
-    """Check if a pattern is a valid glob pattern.
-
-    Args:
-        pattern: Glob pattern to validate
-
-    Returns:
-        True if valid
-    """
-    # Basic validation - glob patterns should only contain safe chars
-    # Allow: alphanumeric, /, *, ?, [, ], ., -, _, **
-    if not pattern:
-        return False
-
-    # Check for obviously invalid patterns
-    if re.search(r"[<>|;`$]", pattern):
-        return False
-
-    return True
 
 
 def validate_gitignore_pattern(pattern: str) -> list[str]:
@@ -441,68 +412,8 @@ def validate_context_max_tokens(value: str) -> list[str]:
     return errors
 
 
-def validate_analyze_diffs(value: str) -> list[str]:
-    """Validate analyze_diffs input (boolean string).
-
-    Args:
-        value: String value from action input ('true' or 'false')
-
-    Returns:
-        List of validation errors (empty if valid)
-    """
-    errors = []
-
-    if not value or not value.strip():
-        return errors  # Empty uses default
-
-    normalized = value.strip().lower()
-    if normalized not in ("true", "false"):
-        errors.append(f"analyze_diffs must be 'true' or 'false', got '{value}'")
-
-    return errors
-
-
-def validate_diff_exclude_patterns(patterns: str) -> list[str]:
-    """Validate diff_exclude_patterns input (comma-separated gitignore-style patterns).
-
-    Reuses validate_context_files_patterns for consistent pattern validation.
-
-    Args:
-        patterns: Comma-separated gitignore-style patterns
-
-    Returns:
-        List of validation errors (empty if valid)
-    """
-    # Reuse existing gitignore pattern validation
-    return validate_context_files_patterns(patterns)
-
-
-def validate_diff_max_files(value: str) -> list[str]:
-    """Validate diff_max_files input (non-negative integer).
-
-    Args:
-        value: String value from action input
-
-    Returns:
-        List of validation errors (empty if valid)
-    """
-    errors = []
-
-    if not value or not value.strip():
-        return errors  # Empty uses default
-
-    try:
-        max_files = int(value)
-        if max_files < 0:
-            errors.append(f"diff_max_files must be non-negative, got {max_files}")
-    except ValueError:
-        errors.append(f"diff_max_files must be an integer, got '{value}'")
-
-    return errors
-
-
-def validate_diff_max_total_lines(value: str) -> list[str]:
-    """Validate diff_max_total_lines input (non-negative integer).
+def validate_diff_max_lines(value: str) -> list[str]:
+    """Validate diff_max_lines input (non-negative integer).
 
     Args:
         value: String value from action input
@@ -518,61 +429,15 @@ def validate_diff_max_total_lines(value: str) -> list[str]:
     try:
         max_lines = int(value)
         if max_lines < 0:
-            errors.append(f"diff_max_total_lines must be non-negative, got {max_lines}")
+            errors.append(f"diff_max_lines must be non-negative, got {max_lines}")
     except ValueError:
-        errors.append(f"diff_max_total_lines must be an integer, got '{value}'")
+        errors.append(f"diff_max_lines must be an integer, got '{value}'")
 
     return errors
 
 
-VALID_THINKING_MODES = ("", "adaptive", "off")
-
-
-def validate_temperature(value: str) -> list[str]:
-    """Validate temperature input.
-
-    Args:
-        value: String value from action input
-
-    Returns:
-        List of validation errors (empty if valid)
-    """
-    errors = []
-
-    if not value or not value.strip():
-        return errors  # Empty omits the parameter
-
-    try:
-        temperature = float(value)
-        if not 0.0 <= temperature <= 2.0:
-            errors.append(f"temperature must be between 0.0 and 2.0, got {temperature}")
-    except ValueError:
-        errors.append(f"temperature must be a number, got '{value}'")
-
-    return errors
-
-
-def validate_thinking(value: str) -> list[str]:
-    """Validate thinking input.
-
-    Args:
-        value: String value from action input
-
-    Returns:
-        List of validation errors (empty if valid)
-    """
-    errors = []
-
-    normalized = (value or "").strip().lower()
-    if normalized not in VALID_THINKING_MODES:
-        valid = ", ".join(m or "(empty)" for m in VALID_THINKING_MODES)
-        errors.append(f"Invalid thinking mode: '{value}'. Valid values: {valid}")
-
-    return errors
-
-
-def validate_extra_llm_params(value: str) -> list[str]:
-    """Validate extra_llm_params input.
+def validate_llm_params(value: str) -> list[str]:
+    """Validate llm_params input.
 
     Args:
         value: JSON object string from action input
@@ -588,13 +453,38 @@ def validate_extra_llm_params(value: str) -> list[str]:
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError as e:
-        errors.append(f"extra_llm_params must be valid JSON: {e}")
+        errors.append(f"llm_params must be valid JSON: {e}")
         return errors
 
     if not isinstance(parsed, dict):
-        errors.append(f"extra_llm_params must be a JSON object, got {type(parsed).__name__}")
+        errors.append(f"llm_params must be a JSON object, got {type(parsed).__name__}")
 
     return errors
+
+
+def validate_content_override_mode(
+    base_ref: str | None,
+    head_ref: str | None,
+    tag_pattern: str | None,
+    diffs: str | None,
+) -> list[str]:
+    """Reject git inputs alongside content_override, which bypasses git entirely.
+
+    Inputs left at their defaults are fine: only a value the workflow chose
+    would be silently ignored.
+    """
+    ignored = []
+    if base_ref:
+        ignored.append("base_ref")
+    if head_ref and head_ref != "HEAD":
+        ignored.append("head_ref")
+    if tag_pattern and tag_pattern != DEFAULT_TAG_PATTERN:
+        ignored.append("tag_pattern")
+    if diffs and diffs != DEFAULT_DIFF_PATTERNS:
+        ignored.append("diffs")
+    if ignored:
+        return [f"content_override analyzes the given content instead of git; remove {', '.join(ignored)}"]
+    return []
 
 
 def validate_project_type(value: str) -> list[str]:
@@ -615,46 +505,32 @@ def validate_project_type(value: str) -> list[str]:
 def validate_inputs(
     current_version: str | None = None,
     head_ref: str | None = None,
-    content_override: str | None = None,
-    changelog_config: str | None = None,
-    include_diffs: str | None = None,
-    validation_mode: ValidationMode = ValidationMode.BOTH,
-    context_files: str | None = None,
-    context_max_tokens: str | None = None,
-    analyze_diffs: str | None = None,
-    diff_exclude_patterns: str | None = None,
-    diff_max_files: str | None = None,
-    diff_max_total_lines: str | None = None,
-    temperature: str | None = None,
-    thinking: str | None = None,
-    extra_llm_params: str | None = None,
-    project_type: str | None = None,
-    versioning: str | None = None,
     base_ref: str | None = None,
     tag_pattern: str | None = None,
+    content_override: str | None = None,
+    changelog_config: str | None = None,
+    context_files: str | None = None,
+    context_max_tokens: str | None = None,
+    diffs: str | None = None,
+    diff_max_lines: str | None = None,
+    llm_params: str | None = None,
+    project_type: str | None = None,
 ) -> InputValidationResult:
     """Validate all action inputs before processing.
 
     Args:
-        current_version: Current version string
+        current_version: Version to bump from
         head_ref: Head git ref
-        content_override: Optional content override for multi-repo
-        changelog_config: Optional changelog config YAML/JSON
-        include_diffs: Comma-separated file patterns
-        validation_mode: Content validation mode (NONE skips injection scanning)
-        context_files: Comma-separated gitignore-style patterns for context files
-        context_max_tokens: Maximum tokens for context content
-        analyze_diffs: Enable diff analysis ('true' or 'false')
-        diff_exclude_patterns: Comma-separated gitignore-style patterns for diff exclusion
-        diff_max_files: Maximum number of files to include in diff analysis
-        diff_max_total_lines: Maximum total lines of diff content
-        temperature: LLM temperature (empty omits the parameter)
-        thinking: Thinking mode ('', 'adaptive' or 'off')
-        extra_llm_params: JSON object of extra litellm.completion kwargs
-        project_type: Project type ('auto', 'library', 'api', 'service', 'app', 'generic')
-        versioning: Versioning scheme ('semver' or 'none')
         base_ref: Git ref the analyzed range starts from
         tag_pattern: Glob matching release tags, for detecting the previous release
+        content_override: Optional content override for multi-repo
+        changelog_config: Optional changelog config YAML/JSON
+        context_files: Comma-separated gitignore-style patterns for context files
+        context_max_tokens: Maximum tokens for context content
+        diffs: Comma-separated gitignore-style patterns selecting diffs to analyze
+        diff_max_lines: Maximum total lines of diff content
+        llm_params: JSON object of extra litellm.completion kwargs
+        project_type: Project type ('auto', 'library', 'api', 'service', 'app', 'generic')
 
     Returns:
         InputValidationResult with valid flag and errors list
@@ -665,26 +541,19 @@ def validate_inputs(
     if current_version:
         errors.extend(validate_version_format(current_version))
 
-    if versioning:
-        errors.extend(validate_versioning(versioning, current_version))
-
     for name, ref in (("base_ref", base_ref), ("head_ref", head_ref), ("tag_pattern", tag_pattern)):
         if ref:
             errors.extend(validate_git_ref(ref, name))
 
-    # Either commits available OR content_override required
-    if not content_override:
-        # Will need git commits - check we're in a git repo
-        if not os.path.exists(".git"):
-            errors.append("Not in a git repository and no content_override provided")
-
-    # Content override validation (smart scanner) - skip if validation_mode is NONE
-    if content_override and validation_mode != ValidationMode.NONE:
-        scan_result = scan_content_override(content_override)
+    if content_override:
+        errors.extend(validate_content_override_mode(base_ref, head_ref, tag_pattern, diffs))
+        # Pattern scan: rejects HIGH/CRITICAL threats
         try:
-            handle_scan_result(scan_result)
+            handle_scan_result(scan_content_override(content_override))
         except ValueError as e:
             errors.append(str(e))
+    elif not os.path.exists(".git"):
+        errors.append("Not in a git repository and no content_override provided")
 
     # changelog_config must be valid YAML/JSON if provided
     if changelog_config:
@@ -711,43 +580,21 @@ def validate_inputs(
         except yaml.YAMLError as e:
             errors.append(f"Invalid changelog_config YAML: {e}")
 
-    # include_diffs must be valid glob patterns
-    if include_diffs:
-        for pattern in include_diffs.split(","):
-            pattern = pattern.strip()
-            if pattern and not validate_glob_pattern(pattern):
-                errors.append(f"Invalid glob pattern: {pattern}")
-
-    # context_files must be valid gitignore-style patterns
+    # context_files and diffs must be valid gitignore-style patterns
     if context_files:
         errors.extend(validate_context_files_patterns(context_files))
 
-    # context_max_tokens must be a positive integer
+    if diffs:
+        errors.extend(validate_context_files_patterns(diffs))
+
     if context_max_tokens:
         errors.extend(validate_context_max_tokens(context_max_tokens))
 
-    # Diff analysis parameters validation
-    if analyze_diffs:
-        errors.extend(validate_analyze_diffs(analyze_diffs))
+    if diff_max_lines:
+        errors.extend(validate_diff_max_lines(diff_max_lines))
 
-    if diff_exclude_patterns:
-        errors.extend(validate_diff_exclude_patterns(diff_exclude_patterns))
-
-    if diff_max_files:
-        errors.extend(validate_diff_max_files(diff_max_files))
-
-    if diff_max_total_lines:
-        errors.extend(validate_diff_max_total_lines(diff_max_total_lines))
-
-    # LLM parameter validation
-    if temperature:
-        errors.extend(validate_temperature(temperature))
-
-    if thinking:
-        errors.extend(validate_thinking(thinking))
-
-    if extra_llm_params:
-        errors.extend(validate_extra_llm_params(extra_llm_params))
+    if llm_params:
+        errors.extend(validate_llm_params(llm_params))
 
     if project_type:
         errors.extend(validate_project_type(project_type))

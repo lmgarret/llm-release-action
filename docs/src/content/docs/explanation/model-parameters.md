@@ -1,12 +1,12 @@
 ---
 title: Model parameters
-description: Why the action passes model parameters through unchanged instead of adapting them per model, and what that means for thinking models.
+description: Why the action passes llm_params through unchanged instead of adapting them per model, and what that means for thinking models.
 sidebar:
   order: 5
 ---
 
-The action passes model parameters through exactly as you configure them. It doesn't
-keep a list of what each model accepts.
+The action passes model parameters through exactly as you configure them in
+`llm_params`. It doesn't keep a list of what each model accepts.
 
 ## Why pass-through
 
@@ -14,23 +14,27 @@ Providers change accepted parameters with almost every model generation: `temper
 became deprecated on recent Anthropic models, `thinking` gained new modes, some models
 refuse to disable thinking. A built-in compatibility table would always be out of date,
 and silently dropping or rewriting a parameter would hide what was actually sent.
+Dedicated inputs per parameter would have the same problem, so there is one JSON input
+instead.
 
 With pass-through:
 
-- a new model works the day it ships,
+- a new model or parameter works the day it ships,
 - a parameter the model rejects fails with the provider's own error naming it, and the fix is in your workflow inputs.
 
 ## What is sent
 
-By default only `model`, `max_tokens` and `timeout`. Everything else is opt-in:
+By default only `model`, `max_tokens` and `timeout`. `llm_params` adds any other
+provider parameter, merged into every call (analysis, changelogs and the `fast_model`
+calls alike). For example:
 
-- **`temperature`**: sent only when set.
-- **`thinking`**: `adaptive` or `off`.
-- **`extra_llm_params`**: any other provider parameter, merged last into every call (analysis, changelogs and the action's internal calls alike), so it overrides the inputs above.
+- `{"temperature": 0.2}`
+- `{"thinking": {"type": "adaptive"}}` or `{"thinking": {"type": "disabled"}}`
+- `{"reasoning_effort": "low"}`
 
-`reasoning_effort` in `extra_llm_params` is translated by LiteLLM into Anthropic's
-adaptive thinking plus `output_config.effort`. It also sets `thinking`, so combining it
-with the `thinking` input sends conflicting values.
+`reasoning_effort` is translated by LiteLLM into Anthropic's adaptive thinking plus
+`output_config.effort`. It also sets `thinking`, so combining both keys sends
+conflicting values.
 
 ## Thinking and `max_tokens`
 

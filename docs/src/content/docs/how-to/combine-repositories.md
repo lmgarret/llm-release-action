@@ -117,7 +117,10 @@ Interpolating into `with:` is fine: inputs are passed as data, not parsed as she
 
 ## What to know
 
-- Set `current_version`: there are no tags to detect it from.
+- Set `current_version`: there are no tags to detect it from. Without it, `next_version`
+  is empty and the release is named `Unreleased`.
+- `content_override` replaces git entirely: setting `base_ref`, `tag_pattern`, a
+  non-default `head_ref` or `diffs` alongside it fails the run.
 - `project_type: auto` falls back to `generic`; set the type explicitly if it matters.
 - Large content is split and processed with map/reduce automatically.
-- Unlike commits, `content_override` is scanned for prompt injection. HIGH and CRITICAL findings (injection phrases, encoding tricks, content over 500KB) reject the run; MEDIUM findings are logged. With `validate_injections: both`, MEDIUM findings also go through an LLM check. See [Security model](/llm-release-action/explanation/security-model/).
+- Unlike commits, `content_override` is scanned for prompt injection. HIGH and CRITICAL findings (injection phrases, encoding tricks, content over 500KB) reject the run; MEDIUM findings are logged. The scan is always on. See [Security model](/llm-release-action/explanation/security-model/).

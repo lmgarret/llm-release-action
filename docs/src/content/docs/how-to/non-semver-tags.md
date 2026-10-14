@@ -5,9 +5,9 @@ sidebar:
   order: 13
 ---
 
-Set `versioning: none` when your tags aren't semver, such as `demo-202610140930`. The
-action then analyzes the range between two refs and generates changelogs, but computes
-no next version.
+Set `tag_pattern` when your release tags aren't semver, such as `demo-202610140930`. The
+action analyzes the range since the previous matching tag and generates changelogs, but
+computes no next version.
 
 ## Changelog on each tag push
 
@@ -28,7 +28,6 @@ jobs:
         id: release
         with:
           model: anthropic/claude-sonnet-5
-          versioning: none
           tag_pattern: 'demo-*'
           head_ref: ${{ github.ref_name }}
         env:
@@ -44,22 +43,20 @@ tag, not against itself. The changelogs are titled with the pushed tag.
 `base_ref` takes any tag, SHA or branch and overrides tag detection:
 
 ```yaml
-    versioning: none
     base_ref: 3f2a1c9
 ```
 
-`base_ref` also works with `versioning: semver`. The version to bump then comes from
-`current_version`, or from the nearest semver tag before `base_ref`.
+## What you get without a semver base
 
-## What changes with `versioning: none`
-
-- `next_version` is empty. `bump`, `reasoning` and breaking-change detection still work,
-  and are still useful to flag a risky release.
+- `next_version` is empty and a notice is logged. `bump`, `reasoning` and
+  breaking-change detection still work, and are still useful to flag a risky release.
 - `current_version` holds the base ref.
 - Changelogs are titled with `head_ref` when it is a tag, else a tag matching
   `tag_pattern` on `head_ref`, else `Unreleased`. The `release_name` output holds the
   title used.
-- `current_version` can't be set: use `base_ref`.
 
-Without `tag_pattern`, the nearest tag of any name is used. For a first release with no
-tags, set `base_ref` to the commit to start from.
+To get a `next_version` anyway, set `current_version` to the version to bump from. It
+doesn't change the range.
+
+With no matching tag, the whole history of `head_ref` is analyzed and a warning is
+emitted. Set `base_ref` to start from a specific commit instead.

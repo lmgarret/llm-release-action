@@ -9,7 +9,7 @@ import pytest
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from analyze import get_default_preset, run_phase2
+from analyze import LLMSettings, run_phase2
 from changelog import AUDIENCE_PERSONAS
 from config import ChangelogConfig
 from flatten import DEFAULT_BREAKING_DEFINITION, build_flatten_prompt
@@ -191,12 +191,7 @@ class TestFlattenPrompt:
 
 
 class TestDefaultAudience:
-    def test_default_preset(self) -> None:
-        assert get_default_preset("app") == "customer"
-        assert get_default_preset("library") == "developer"
-        assert get_default_preset("generic") == "developer"
-
-    def test_app_default_changelog_is_user_facing(self) -> None:
+    def test_default_changelog_is_developer(self) -> None:
         prompts = []
 
         def fake_llm(**kwargs):
@@ -211,13 +206,10 @@ class TestDefaultAudience:
                 changelog_config=ChangelogConfig(),
                 version="v1.1.0",
                 base_url=None,
-                temperature=None,
-                max_tokens=1000,
-                timeout=10,
-                debug=False,
-                project_type="app",
+                llm=LLMSettings(max_tokens=1000, timeout=10),
             )
-        assert AUDIENCE_PERSONAS["customer"] in prompts[0]
+        # The project type decides breaking changes, not the audience
+        assert AUDIENCE_PERSONAS["developer"] in prompts[0]
 
 
 class TestInputValidation:

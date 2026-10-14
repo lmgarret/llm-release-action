@@ -1,6 +1,6 @@
 ---
 title: Default patterns
-description: Built-in exclusions for context files and diff analysis, diff file prioritization, and internal content detection patterns.
+description: Built-in context file exclusions, default diff patterns, diff file prioritization, and internal content detection patterns.
 sidebar:
   order: 6
 ---
@@ -23,27 +23,22 @@ turned off from the workflow.
 | Generated docs | `site`, `_site`, `docs/_build` |
 | Other | `.git`, `logs`, `.logs`, `tmp`, `temp`, `.tmp` |
 
-## Diff exclusions
+## Diff patterns
 
-Default of `diff_exclude_patterns`. Setting the input replaces the whole list.
+Default of `diffs`:
 
 ```
-**/*.lock
-**/package-lock.json
-**/yarn.lock
-**/Cargo.lock
-**/poetry.lock
-**/vendor/**
-**/node_modules/**
-**/*.generated.*
-**/generated/**
-**/*.min.js
-**/*.min.css
+**/openapi*.yaml
+**/migrations/**
+**/*.proto
 ```
+
+Setting the input replaces the whole list. Patterns are gitignore-style, comma-separated,
+and `!` excludes files matched by an earlier pattern.
 
 ## Diff file prioritization
 
-When `diff_max_files` or `diff_max_total_lines` is exceeded, files are kept in this order:
+When the diffs exceed `diff_max_lines`, files are kept in this order:
 
 1. API specs: `openapi*.yaml`, `*.proto`, `*.graphql`
 2. Database migrations: `**/migrations/**`

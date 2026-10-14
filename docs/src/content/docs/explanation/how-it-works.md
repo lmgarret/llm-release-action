@@ -15,12 +15,15 @@ commits, diffs, context ──► Phase 0: flatten ──► Phase 1: analyze �
 
 ## Inputs gathered
 
-- **Commits** between `current_version` (or the latest semver tag) and `head_ref`. The `max_commits` most recent are included in full; older ones are summarized.
-- **Raw diffs** of files matching `include_diffs` (OpenAPI specs, migrations, protobuf by default), or, with `analyze_diffs`, structured changes extracted from each file diff by a separate LLM call.
-- **Project context** from `context_files`, summarized to fit `context_max_tokens`.
+- **Commits** between the base ref (`base_ref`, else the nearest tag matching `tag_pattern`, else the start of history) and `head_ref`.
+- **Diff changes**: diffs of files matching `diffs` (OpenAPI specs, migrations, protobuf by default), turned into added, removed and modified items by `fast_model`.
+- **Project context** from `context_files` (the root `README.md` by default), summarized by `fast_model` to fit `context_max_tokens`.
 - **Project type**, detected from the README and file layout when `project_type: auto`.
 
 With `content_override`, the provided Markdown replaces commits and diffs.
+
+Consolidation, analysis and changelog writing run on `model`; the gathering calls above
+run on `fast_model`.
 
 ## Phase 0: flatten
 
@@ -37,7 +40,8 @@ From them the model chooses the bump, following the
 and explains its choice in `reasoning`.
 
 The action validates the answer (`bump` must be exactly `major`, `minor` or `patch`) and
-computes `next_version` itself.
+computes `next_version` itself, from `current_version` or the semver base tag. Without
+either, `next_version` is empty.
 
 ## Phase 2: changelog generation
 

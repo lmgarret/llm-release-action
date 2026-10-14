@@ -1,389 +1,123 @@
-"""Tests for diff analysis input validation functions.
+"""Tests for diff analysis, llm_params and content_override input validation.
 
 Tests cover:
-1. validate_analyze_diffs - boolean string validation
-2. validate_diff_exclude_patterns - gitignore-style pattern validation
-3. validate_diff_max_files - non-negative integer validation
-4. validate_diff_max_total_lines - non-negative integer validation
-5. Integration with validate_inputs
+1. validate_diff_max_lines - non-negative integer validation
+2. diffs patterns - gitignore-style pattern validation
+3. validate_llm_params - JSON object validation
+4. content_override excluding the git inputs
 """
 
 import os
 import sys
 
+import pytest
+
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from input_validation import (
-    validate_analyze_diffs,
-    validate_diff_exclude_patterns,
-    validate_diff_max_files,
-    validate_diff_max_total_lines,
+from diff_analyzer import DEFAULT_DIFF_PATTERNS  # noqa: E402
+from input_validation import (  # noqa: E402
+    validate_content_override_mode,
+    validate_diff_max_lines,
     validate_inputs,
+    validate_llm_params,
 )
+from version import DEFAULT_TAG_PATTERN  # noqa: E402
 
 
-class TestValidateAnalyzeDiffs:
-    """Tests for validate_analyze_diffs function."""
-
-    def test_valid_true(self):
-        """'true' should be valid."""
-        errors = validate_analyze_diffs("true")
-        assert errors == []
-
-    def test_valid_false(self):
-        """'false' should be valid."""
-        errors = validate_analyze_diffs("false")
-        assert errors == []
-
-    def test_valid_true_uppercase(self):
-        """'TRUE' should be valid (case insensitive)."""
-        errors = validate_analyze_diffs("TRUE")
-        assert errors == []
-
-    def test_valid_false_uppercase(self):
-        """'FALSE' should be valid (case insensitive)."""
-        errors = validate_analyze_diffs("FALSE")
-        assert errors == []
-
-    def test_valid_mixed_case(self):
-        """Mixed case should be valid."""
-        errors = validate_analyze_diffs("True")
-        assert errors == []
-        errors = validate_analyze_diffs("False")
-        assert errors == []
-
-    def test_valid_with_whitespace(self):
-        """Value with surrounding whitespace should be valid."""
-        errors = validate_analyze_diffs("  true  ")
-        assert errors == []
-        errors = validate_analyze_diffs("  false  ")
-        assert errors == []
-
-    def test_empty_string(self):
-        """Empty string should be valid (uses default)."""
-        errors = validate_analyze_diffs("")
-        assert errors == []
-
-    def test_none_value(self):
-        """None should be valid (uses default)."""
-        errors = validate_analyze_diffs(None)
-        assert errors == []
-
-    def test_whitespace_only(self):
-        """Whitespace-only string should be valid (uses default)."""
-        errors = validate_analyze_diffs("   ")
-        assert errors == []
-
-    def test_invalid_value(self):
-        """Invalid boolean string should return error."""
-        errors = validate_analyze_diffs("yes")
-        assert len(errors) == 1
-        assert "must be 'true' or 'false'" in errors[0]
-
-    def test_invalid_number(self):
-        """Numeric value should return error."""
-        errors = validate_analyze_diffs("1")
-        assert len(errors) == 1
-        assert "must be 'true' or 'false'" in errors[0]
-
-    def test_invalid_random_string(self):
-        """Random string should return error."""
-        errors = validate_analyze_diffs("enable")
-        assert len(errors) == 1
-        assert "must be 'true' or 'false'" in errors[0]
+@pytest.fixture
+def git_dir(tmp_path, monkeypatch):
+    """Run in a directory that looks like a git checkout."""
+    (tmp_path / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
 
 
-class TestValidateDiffExcludePatterns:
-    """Tests for validate_diff_exclude_patterns function."""
+class TestValidateDiffMaxLines:
+    """Tests for validate_diff_max_lines function."""
 
-    def test_empty_string(self):
-        """Empty string should be valid."""
-        errors = validate_diff_exclude_patterns("")
-        assert errors == []
-
-    def test_none_value(self):
-        """None should be valid."""
-        errors = validate_diff_exclude_patterns(None)
-        assert errors == []
-
-    def test_single_valid_pattern(self):
-        """Single valid pattern should pass."""
-        errors = validate_diff_exclude_patterns("**/*.lock")
-        assert errors == []
-
-    def test_multiple_valid_patterns(self):
-        """Multiple valid patterns should pass."""
-        errors = validate_diff_exclude_patterns("**/*.lock,**/node_modules/**,**/*.min.js")
-        assert errors == []
-
-    def test_default_patterns_valid(self):
-        """Default action patterns should be valid."""
-        default_patterns = (
-            "**/*.lock,**/package-lock.json,**/yarn.lock,**/Cargo.lock,"
-            "**/poetry.lock,**/vendor/**,**/node_modules/**,**/*.generated.*,"
-            "**/generated/**,**/*.min.js,**/*.min.css"
-        )
-        errors = validate_diff_exclude_patterns(default_patterns)
-        assert errors == []
-
-    def test_negation_pattern(self):
-        """Negation patterns should be valid."""
-        errors = validate_diff_exclude_patterns("**/*.lock,!**/important.lock")
-        assert errors == []
-
-    def test_invalid_pattern_with_shell_chars(self):
-        """Patterns with shell metacharacters should fail."""
-        errors = validate_diff_exclude_patterns("*.lock;rm -rf /")
-        assert len(errors) > 0
-        assert any("invalid characters" in e.lower() for e in errors)
-
-    def test_invalid_pattern_with_pipe(self):
-        """Patterns with pipe should fail."""
-        errors = validate_diff_exclude_patterns("*.lock|cat /etc/passwd")
-        assert len(errors) > 0
-
-    def test_path_traversal_rejected(self):
-        """Path traversal patterns should be rejected."""
-        errors = validate_diff_exclude_patterns("../../../etc/passwd")
-        assert len(errors) > 0
-        assert any("path traversal" in e.lower() for e in errors)
-
-    def test_pattern_too_long(self):
-        """Very long patterns should be rejected."""
-        long_pattern = "a" * 600
-        errors = validate_diff_exclude_patterns(long_pattern)
-        assert len(errors) > 0
-        assert any("too long" in e.lower() for e in errors)
-
-
-class TestValidateDiffMaxFiles:
-    """Tests for validate_diff_max_files function."""
-
-    def test_valid_positive_integer(self):
-        """Positive integer should be valid."""
-        errors = validate_diff_max_files("50")
-        assert errors == []
-
-    def test_valid_zero(self):
-        """Zero should be valid."""
-        errors = validate_diff_max_files("0")
-        assert errors == []
-
-    def test_valid_large_number(self):
-        """Large positive number should be valid."""
-        errors = validate_diff_max_files("1000")
-        assert errors == []
-
-    def test_empty_string(self):
-        """Empty string should be valid (uses default)."""
-        errors = validate_diff_max_files("")
-        assert errors == []
-
-    def test_none_value(self):
-        """None should be valid (uses default)."""
-        errors = validate_diff_max_files(None)
-        assert errors == []
-
-    def test_whitespace_only(self):
-        """Whitespace-only string should be valid (uses default)."""
-        errors = validate_diff_max_files("   ")
-        assert errors == []
+    @pytest.mark.parametrize("value", ["0", "5000", "1000000", "", "   ", None])
+    def test_valid(self, value):
+        assert validate_diff_max_lines(value) == []
 
     def test_invalid_negative(self):
-        """Negative integer should return error."""
-        errors = validate_diff_max_files("-1")
-        assert len(errors) == 1
-        assert "must be non-negative" in errors[0]
+        errors = validate_diff_max_lines("-1")
+        assert any("must be non-negative" in e for e in errors)
 
-    def test_invalid_float(self):
-        """Float should return error."""
-        errors = validate_diff_max_files("50.5")
-        assert len(errors) == 1
-        assert "must be an integer" in errors[0]
-
-    def test_invalid_string(self):
-        """Non-numeric string should return error."""
-        errors = validate_diff_max_files("fifty")
-        assert len(errors) == 1
-        assert "must be an integer" in errors[0]
+    @pytest.mark.parametrize("value", ["1.5", "lots"])
+    def test_invalid_not_integer(self, value):
+        errors = validate_diff_max_lines(value)
+        assert any("must be an integer" in e for e in errors)
 
 
-class TestValidateDiffMaxTotalLines:
-    """Tests for validate_diff_max_total_lines function."""
+class TestValidateLlmParams:
+    """Tests for validate_llm_params function."""
 
-    def test_valid_positive_integer(self):
-        """Positive integer should be valid."""
-        errors = validate_diff_max_total_lines("5000")
-        assert errors == []
+    @pytest.mark.parametrize("value", ["", '{"temperature": 0.2}', '{"thinking": {"type": "adaptive"}}'])
+    def test_valid(self, value):
+        assert validate_llm_params(value) == []
 
-    def test_valid_zero(self):
-        """Zero should be valid."""
-        errors = validate_diff_max_total_lines("0")
-        assert errors == []
+    def test_invalid_json(self):
+        assert any("must be valid JSON" in e for e in validate_llm_params("{not json}"))
 
-    def test_valid_large_number(self):
-        """Large positive number should be valid."""
-        errors = validate_diff_max_total_lines("100000")
-        assert errors == []
-
-    def test_empty_string(self):
-        """Empty string should be valid (uses default)."""
-        errors = validate_diff_max_total_lines("")
-        assert errors == []
-
-    def test_none_value(self):
-        """None should be valid (uses default)."""
-        errors = validate_diff_max_total_lines(None)
-        assert errors == []
-
-    def test_whitespace_only(self):
-        """Whitespace-only string should be valid (uses default)."""
-        errors = validate_diff_max_total_lines("   ")
-        assert errors == []
-
-    def test_invalid_negative(self):
-        """Negative integer should return error."""
-        errors = validate_diff_max_total_lines("-100")
-        assert len(errors) == 1
-        assert "must be non-negative" in errors[0]
-
-    def test_invalid_float(self):
-        """Float should return error."""
-        errors = validate_diff_max_total_lines("5000.5")
-        assert len(errors) == 1
-        assert "must be an integer" in errors[0]
-
-    def test_invalid_string(self):
-        """Non-numeric string should return error."""
-        errors = validate_diff_max_total_lines("five-thousand")
-        assert len(errors) == 1
-        assert "must be an integer" in errors[0]
+    def test_non_object(self):
+        assert any("must be a JSON object" in e for e in validate_llm_params('["a"]'))
 
 
-class TestValidateInputsIntegration:
-    """Integration tests for validate_inputs with diff analysis parameters."""
+class TestDiffsPatterns:
+    """diffs takes gitignore-style patterns, like context_files."""
 
-    def test_valid_diff_params(self, tmp_path, monkeypatch):
-        """Valid diff parameters should pass validation."""
-        # Create a fake git repo
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
+    def test_default_patterns_valid(self, git_dir):
+        result = validate_inputs(diffs=DEFAULT_DIFF_PATTERNS)
+        assert result.valid, result.errors
 
-        result = validate_inputs(
-            analyze_diffs="true",
-            diff_exclude_patterns="**/*.lock,**/node_modules/**",
-            diff_max_files="50",
-            diff_max_total_lines="5000",
-        )
-        assert result.valid is True
-        assert result.errors == []
+    @pytest.mark.parametrize(
+        "patterns",
+        [
+            "**/openapi*.yaml,**/migrations/**,**/*.proto",
+            "**,!**/*.lock,!**/node_modules/**",
+            "**/test_*.py,**/*_test.go,**/__tests__/**",
+            "**/*.sql,**/db/migrations/*",
+        ],
+    )
+    def test_real_world_patterns(self, git_dir, patterns):
+        result = validate_inputs(diffs=patterns)
+        assert result.valid, result.errors
 
-    def test_invalid_analyze_diffs_in_validate_inputs(self, tmp_path, monkeypatch):
-        """Invalid analyze_diffs should fail in validate_inputs."""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-
-        result = validate_inputs(
-            analyze_diffs="yes",
-        )
-        assert result.valid is False
-        assert any("must be 'true' or 'false'" in e for e in result.errors)
-
-    def test_invalid_diff_max_files_in_validate_inputs(self, tmp_path, monkeypatch):
-        """Invalid diff_max_files should fail in validate_inputs."""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-
-        result = validate_inputs(
-            diff_max_files="-10",
-        )
-        assert result.valid is False
-        assert any("must be non-negative" in e for e in result.errors)
-
-    def test_invalid_diff_max_total_lines_in_validate_inputs(self, tmp_path, monkeypatch):
-        """Invalid diff_max_total_lines should fail in validate_inputs."""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-
-        result = validate_inputs(
-            diff_max_total_lines="invalid",
-        )
-        assert result.valid is False
-        assert any("must be an integer" in e for e in result.errors)
-
-    def test_invalid_diff_exclude_patterns_in_validate_inputs(self, tmp_path, monkeypatch):
-        """Invalid diff_exclude_patterns should fail in validate_inputs."""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-
-        result = validate_inputs(
-            diff_exclude_patterns="../../etc/passwd",
-        )
-        assert result.valid is False
+    def test_path_traversal_rejected(self, git_dir):
+        result = validate_inputs(diffs="../../etc/passwd")
         assert any("path traversal" in e.lower() for e in result.errors)
 
-    def test_multiple_invalid_diff_params(self, tmp_path, monkeypatch):
-        """Multiple invalid parameters should all be reported."""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
+    def test_shell_characters_rejected(self, git_dir):
+        result = validate_inputs(diffs="**/*.py;rm -rf /")
+        assert not result.valid
 
-        result = validate_inputs(
-            analyze_diffs="maybe",
-            diff_max_files="-5",
-            diff_max_total_lines="lots",
-        )
-        assert result.valid is False
+    def test_all_errors_reported(self, git_dir):
+        result = validate_inputs(diffs="../x", diff_max_lines="lots", llm_params="[]")
         assert len(result.errors) == 3
 
 
-class TestRealWorldPatterns:
-    """Tests with real-world-like patterns."""
+class TestContentOverrideMode:
+    """content_override bypasses git, so git inputs set alongside it are rejected."""
 
-    def test_common_exclusion_patterns(self):
-        """Common, legitimate exclusion patterns should work."""
-        patterns = [
-            "**/*.lock",
-            "**/package-lock.json",
-            "**/yarn.lock",
-            "**/Cargo.lock",
-            "**/poetry.lock",
-            "**/vendor/**",
-            "**/node_modules/**",
-            "**/*.generated.*",
-            "**/generated/**",
-            "**/*.min.js",
-            "**/*.min.css",
-        ]
-        for pattern in patterns:
-            errors = validate_diff_exclude_patterns(pattern)
-            assert errors == [], f"Pattern '{pattern}' should be valid but got: {errors}"
+    def test_defaults_allowed(self):
+        assert validate_content_override_mode("", "HEAD", DEFAULT_TAG_PATTERN, DEFAULT_DIFF_PATTERNS) == []
 
-    def test_migration_file_patterns(self):
-        """Database migration patterns should work."""
-        patterns = [
-            "**/migrations/*.py",
-            "**/db/migrations/*",
-            "**/*.sql",
-        ]
-        for pattern in patterns:
-            errors = validate_diff_exclude_patterns(pattern)
-            assert errors == [], f"Pattern '{pattern}' should be valid"
+    def test_unset_allowed(self):
+        assert validate_content_override_mode(None, None, None, None) == []
 
-    def test_test_file_patterns(self):
-        """Test file patterns should work."""
-        patterns = [
-            "**/test_*.py",
-            "**/*_test.go",
-            "**/tests/**",
-            "**/__tests__/**",
-        ]
-        for pattern in patterns:
-            errors = validate_diff_exclude_patterns(pattern)
-            assert errors == [], f"Pattern '{pattern}' should be valid"
+    def test_disabling_diffs_allowed(self):
+        assert validate_content_override_mode("", "HEAD", DEFAULT_TAG_PATTERN, "") == []
+
+    def test_git_inputs_rejected(self):
+        errors = validate_content_override_mode("v1.0.0", "main", "demo-*", "**/*.py")
+        assert len(errors) == 1
+        for name in ("base_ref", "head_ref", "tag_pattern", "diffs"):
+            assert name in errors[0]
+
+    def test_in_validate_inputs(self, tmp_path, monkeypatch):
+        # No .git needed: the content replaces the repository
+        monkeypatch.chdir(tmp_path)
+        assert validate_inputs(content_override="## Repo\n### Features\n- item").valid
+        result = validate_inputs(content_override="## Repo\n### Features\n- item", base_ref="v1.0.0")
+        assert any("remove base_ref" in e for e in result.errors)

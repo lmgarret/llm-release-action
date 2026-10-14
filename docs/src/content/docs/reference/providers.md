@@ -30,12 +30,13 @@ Smaller models (Haiku 4.5, Nova Lite, GPT-4.1-mini) are faster and cheaper but m
 - produce redundant title/description pairs,
 - miss nuanced audience transformations.
 
-Use a capable model for `model_changelog`, and a cheaper one for `model_analysis`,
-`model_profile` and `validation_model` if cost matters.
+Use a capable model for `model`, and a cheaper one for `fast_model` if cost matters.
 
 ## Parameter compatibility
 
+Parameters set in `llm_params` that some models reject:
+
 | Parameter | Known incompatibilities |
 |-----------|------------------------|
-| `temperature` | Rejected by Sonnet 5 and later, Opus 4.7 and later, Haiku 5.5, Fable, Mythos (`` `temperature` is deprecated for this model ``) |
-| `thinking: off` | Rejected by some models, e.g. Sonnet 5.5, Opus 5.5, Fable. Lower the effort instead. |
+| `"temperature"` | Rejected by Sonnet 5 and later, Opus 4.7 and later, Haiku 5.5, Fable, Mythos (`` `temperature` is deprecated for this model ``) |
+| `"thinking": {"type": "disabled"}` | Rejected by some models, e.g. Sonnet 5.5, Opus 5.5, Fable. Lower the effort instead. |

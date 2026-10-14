@@ -18,7 +18,7 @@ Irreversibility alone (no rollback or downgrade) does not make a change breaking
 
 ## `auto` detection
 
-With `project_type: auto` (default), one LLM call with `model_profile` classifies the
+With `project_type: auto` (default), one LLM call with `fast_model` classifies the
 project from:
 
 - the root README,
@@ -29,6 +29,9 @@ skipped and the type is `generic` unless set explicitly.
 
 ## Effect on the default changelog
 
-Without `changelog_config`, the `default` audience uses the `developer` preset, except
-for `app` projects, which get the `customer` preset (user-facing, no infrastructure or
-docs sections).
+None. Without `changelog_config`, the `default` audience always uses the `developer`
+preset. For a user-facing changelog, for example for an app, set:
+
+```yaml
+changelog_config: "default: {preset: customer}"
+```
