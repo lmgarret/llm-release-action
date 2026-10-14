@@ -23,7 +23,7 @@ def call_llm(prompt: str, max_tokens: int = 2000) -> str:
     """Call LLM via LiteLLM."""
     response = litellm.completion(
         messages=[{"role": "user", "content": prompt}],
-        **completion_kwargs(get_test_model(), temperature=0.0, max_tokens=max_tokens),
+        **completion_kwargs(get_test_model(), max_tokens=max_tokens),
     )
     return response.choices[0].message.content
 

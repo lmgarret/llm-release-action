@@ -37,7 +37,7 @@ class BedrockLLM(DeepEvalBaseLLM):
     def generate(self, prompt: str) -> str:
         response = litellm.completion(
             messages=[{"role": "user", "content": prompt}],
-            **completion_kwargs(self._model, temperature=0.0, max_tokens=1000),
+            **completion_kwargs(self._model, max_tokens=1000),
         )
         return response.choices[0].message.content
 
@@ -52,7 +52,7 @@ def call_llm(prompt: str) -> str:
     """Call LLM via LiteLLM (uses Haiku 4.5 for testing)."""
     response = litellm.completion(
         messages=[{"role": "user", "content": prompt}],
-        **completion_kwargs(get_test_model(), temperature=0.3, max_tokens=2000),
+        **completion_kwargs(get_test_model(), max_tokens=2000),
     )
     return response.choices[0].message.content
 
