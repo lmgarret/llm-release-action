@@ -76,6 +76,25 @@ changelog_config: |
 
 The results are in the `metadata` output, e.g. `.["release-notes"].en.title`.
 
+## Add instructions, a header and issue links
+
+```yaml
+changelog_config: |
+  team:
+    preset: customer
+    instructions: |
+      Readers demo the product. Start with a one-line summary of the release.
+    header: "Linear release: https://linear.app/acme/releases/{version}"
+    footer: "Changes since {previous_version}."
+    link_issues: true
+    issue_url_template: "https://linear.app/acme/issue/{id}"
+```
+
+`instructions` go to the model. `header` and `footer` are added as written, after
+generation, with `{version}` and `{previous_version}` filled in; they count toward
+`validation.max_length`. With `link_issues`, issue IDs mentioned in the commits
+(`Fixes ACME-123`, a branch named `acme-123-...`) are linked on each entry.
+
 ## Filter what an audience sees
 
 ```yaml

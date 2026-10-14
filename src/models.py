@@ -74,6 +74,7 @@ class Change:
     source: str | None = None  # Source repo for multi-repo
     pr_number: int | None = None
     issue_numbers: list[int] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)  # Tracker IDs from commit messages, e.g. ABC-123
 
 
 @dataclass

@@ -18,6 +18,10 @@ from presets import (
 # budget and is enforced during generation, not only checked afterwards.
 DEFAULT_MAX_LENGTH = 100000
 
+# Limits for the free-text fields written by the workflow author
+MAX_INSTRUCTIONS_LENGTH = 4000
+MAX_FRAME_LENGTH = 1000
+
 
 @dataclass
 class ValidationConfig:
@@ -89,6 +93,12 @@ class AudienceConfig:
     link_commits: bool = False
     link_prs: bool = False
     link_issues: bool = False
+    issue_url_template: str = ""  # Link for tracker IDs, e.g. https://linear.app/acme/issue/{id}
+
+    # Workflow-author additions, trusted unlike the commit content
+    instructions: str = ""  # Added to the changelog prompt
+    header: str = ""  # Fixed text above the changelog; {version} and {previous_version} are filled in
+    footer: str = ""  # Fixed text below the changelog, same placeholders
 
     # Metadata generation
     generate_title: bool = False
@@ -296,5 +306,30 @@ def validate_changelog_config(config: dict[str, Any]) -> list[str]:
 
         if "user_facing_only" in settings and not isinstance(settings["user_facing_only"], bool):
             errors.append(f"{audience}: user_facing_only must be a boolean")
+
+        for key, max_chars in (
+            ("instructions", MAX_INSTRUCTIONS_LENGTH),
+            ("header", MAX_FRAME_LENGTH),
+            ("footer", MAX_FRAME_LENGTH),
+        ):
+            if key not in settings:
+                continue
+            value = settings[key]
+            if not isinstance(value, str):
+                errors.append(f"{audience}: {key} must be a string")
+            elif len(value) > max_chars:
+                errors.append(f"{audience}: {key} must be at most {max_chars} characters")
+
+        if (settings.get("header") or settings.get("footer")) and settings.get("output_format") == "json":
+            errors.append(f"{audience}: header and footer are not supported with output_format json")
+
+        if "issue_url_template" in settings:
+            template = settings["issue_url_template"]
+            if (
+                not isinstance(template, str)
+                or not template.startswith(("https://", "http://"))
+                or "{id}" not in template
+            ):
+                errors.append(f"{audience}: issue_url_template must be an http(s) URL containing {{id}}")
 
     return errors

@@ -139,7 +139,7 @@ def parse_breaking_change(line: str) -> BreakingInfo | None:
 def parse_change_line(line: str, index: int) -> Change | None:
     """Parse a single change line from the CHANGES section.
 
-    Format: [category|importance] Title | Description | user_facing:yes|no | commits:sha1,sha2
+    Format: [category|importance] Title | Description | user_facing:yes|no | commits:sha1,sha2 | issues:ABC-123
 
     Args:
         line: Single line from CHANGES section
@@ -183,6 +183,7 @@ def parse_change_line(line: str, index: int) -> Change | None:
     description = ""
     commits: list[str] = []
     user_facing = True
+    issues: list[str] = []
     breaking_info: BreakingInfo | None = None
 
     for part in parts[1:]:
@@ -195,6 +196,8 @@ def parse_change_line(line: str, index: int) -> Change | None:
             imp_str = part[11:].strip().lower()
             if imp_str in IMPORTANCE_MAP:
                 importance = IMPORTANCE_MAP[imp_str]
+        elif part.lower().startswith("issues:"):
+            issues = [i.strip() for i in part[7:].split(",") if i.strip()]
         elif part.lower().startswith("user_facing:"):
             # Only an explicit "no" hides a change from user-facing audiences
             user_facing = part[12:].strip().lower() not in ("no", "false")
@@ -222,6 +225,7 @@ def parse_change_line(line: str, index: int) -> Change | None:
         importance=importance,
         user_facing=user_facing,
         breaking=breaking_info,
+        issues=issues,
     )
 
 
@@ -384,6 +388,26 @@ def parse_phase1_response(response: str) -> AnalysisResult:
         changes=changes,
         changelog=changelog,
     )
+
+
+# Tracker IDs end up in links, so only plain IDs are kept (ABC-123, sc-42, PROJ_1-7)
+ISSUE_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,31}")
+
+
+def keep_verified_issues(changes: list[Change], source_text: str) -> None:
+    """Drop issue IDs that are malformed or absent from the source commits.
+
+    The IDs come from the LLM, so each one must appear verbatim (ignoring case,
+    e.g. in a lowercase branch name) in the text the analysis started from.
+    """
+    for change in changes:
+        change.issues = [
+            issue
+            for issue in dict.fromkeys(change.issues)
+            if ISSUE_ID_PATTERN.fullmatch(issue)
+            and any(c.isdigit() for c in issue)
+            and re.search(rf"(?<![\w-]){re.escape(issue)}(?!\w)", source_text, re.IGNORECASE)
+        ]
 
 
 # =============================================================================

@@ -49,3 +49,8 @@ openspec/
 
 # Local agent worktrees
 .claude/worktrees/
+
+# Local preview files (scripts/preview.py); they often describe private repos
+.local/
+/changes.json
+/changelog.yml

@@ -43,9 +43,13 @@ Input:
 
 Output format - PRESERVE commit SHAs from input:
 <FLATTENED>
-[category|importance] Title | Description | commits:sha1,sha2
+[category|importance] Title | Description | commits:sha1,sha2 | issues:ABC-123
 ...
 </FLATTENED>
+
+issues: issue tracker IDs (e.g. ABC-123) written in the messages of the change's commits,
+including footers and branch names in merge commits. Omit the part when there are none.
+Never invent IDs.
 
 <REMOVED reason="why excluded">
 - Item that was removed/reverted

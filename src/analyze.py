@@ -21,8 +21,8 @@ from typing import Any
 
 import litellm
 
-from analyzer import parse_phase1_response
-from changelog import build_changelog_prompt, build_retry_prompt, filter_changes
+from analyzer import keep_verified_issues, parse_phase1_response
+from changelog import add_frames, build_changelog_prompt, build_retry_prompt, filter_changes, reserve_frame_length
 from config import AudienceConfig, ChangelogConfig
 from content_scanner import handle_scan_result, scan_content_override, truncate_for_context
 from context_loader import DEFAULT_CONTEXT_FILES, ContextResult, detect_staleness, load_context_files
@@ -568,6 +568,7 @@ def run_phase1(
 
     # Parse response
     result = parse_phase1_response(response)
+    keep_verified_issues(result.changes, source_text)
 
     print(f"Bump: {result.bump}")
     print(f"Changes: {len(result.changes)}")
@@ -1060,6 +1061,9 @@ def main() -> int:
         else:
             release_label = resolve_release_label(head_ref, tag_pattern)
 
+        # Headers and footers count toward each audience's max_length
+        changelog_config = reserve_frame_length(changelog_config, release_label, base_label)
+
         # === PHASE 2: Changelog Generation ===
         changelogs, metadata = run_phase2(
             model=model,
@@ -1078,6 +1082,8 @@ def main() -> int:
                 changelog_config=changelog_config,
                 version=release_label,
             )
+
+        changelogs = add_frames(changelogs, changelog_config, release_label, base_label)
 
         # === Set Outputs ===
         log_group("Setting outputs")
@@ -1104,6 +1110,7 @@ def main() -> int:
                 "description": c.description,
                 "importance": c.importance.value,
                 "user_facing": c.user_facing,
+                "issues": c.issues,
                 "commits": c.commits,
                 "authors": c.authors,
             }
