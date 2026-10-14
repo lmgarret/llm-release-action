@@ -51,6 +51,8 @@ another catching everything.
 - Text is Unicode-normalized (NFKC, invisible and bidi characters removed), and the prompts' own structural tags (`<BUMP>`, `</PROJECT_CONTEXT>`...) are escaped, so content can't close its block or forge a response section.
 - Project context is reference data: explicit evidence in the changes outranks it, and directives in it are ignored.
 - The model has no tools and sees no secrets, and its answer is parsed into a fixed shape.
+- The audience `instructions` in `changelog_config` are the exception: they come from the workflow file, so they are followed as instructions, not treated as data.
+- Issue IDs the model extracts are kept only if they appear verbatim in the commit messages and look like plain IDs, so they can't inject links.
 
 ### Layer 2: pattern detection for `content_override` (always on)
 

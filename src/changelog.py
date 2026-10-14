@@ -15,6 +15,7 @@ in prompts to prevent prompt injection attacks.
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import replace
 
 import regex
 
@@ -462,7 +463,65 @@ def _format_change_for_prompt(
                 issue_links.append(f"#{issue_num}")
         lines.append(f"  Issues: {', '.join(issue_links)}")
 
+    if change.issues and config.link_issues:
+        issue_refs = []
+        for issue in change.issues[:3]:
+            if config.issue_url_template:
+                issue_refs.append(f"[{issue}]({config.issue_url_template.replace('{id}', issue)})")
+            else:
+                issue_refs.append(issue)
+        lines.append(f"  Issues: {', '.join(issue_refs)}")
+
     return "\n".join(lines)
+
+
+def render_frame(text: str, version: str, previous_version: str) -> str:
+    """Fill the {version} and {previous_version} placeholders of a header or footer."""
+    return text.replace("{version}", version).replace("{previous_version}", previous_version).strip()
+
+
+def _frame_parts(config: AudienceConfig, version: str, previous_version: str) -> tuple[str, str]:
+    return (
+        render_frame(config.header, version, previous_version),
+        render_frame(config.footer, version, previous_version),
+    )
+
+
+def reserve_frame_length(changelog_config: ChangelogConfig, version: str, previous_version: str) -> ChangelogConfig:
+    """Shrink each audience's length budget by the size of its header and footer.
+
+    Keeps validation.max_length a hard limit on the final, framed changelog.
+    """
+    audiences = {}
+    for name, config in changelog_config.audiences.items():
+        # Parts are joined to the changelog with a blank line
+        frame_length = sum(len(part) + 2 for part in _frame_parts(config, version, previous_version) if part)
+        if frame_length and config.validation.max_length < DEFAULT_MAX_LENGTH:
+            validation = replace(config.validation, max_length=max(1, config.validation.max_length - frame_length))
+            config = replace(config, validation=validation)
+        audiences[name] = config
+    return ChangelogConfig(audiences=audiences)
+
+
+def add_frames(
+    changelogs: dict[str, dict[str, str]],
+    changelog_config: ChangelogConfig,
+    version: str,
+    previous_version: str,
+) -> dict[str, dict[str, str]]:
+    """Put each audience's header above and footer below its changelogs."""
+    framed: dict[str, dict[str, str]] = {}
+    for name, by_language in changelogs.items():
+        config = changelog_config.audiences.get(name)
+        if config is None:
+            framed[name] = by_language
+            continue
+        header, footer = _frame_parts(config, version, previous_version)
+        framed[name] = {
+            language: "\n\n".join(part for part in (header, text.strip(), footer) if part)
+            for language, text in by_language.items()
+        }
+    return framed
 
 
 # Share of validation.max_length the model is asked to target. Models count
@@ -608,6 +667,9 @@ def build_changelog_prompt(
             "- You may use sub-headings within sections to organize (e.g., 'Authentication', 'Chat Widget')"
         )
 
+    if config.link_issues:
+        format_reqs.append("- End each item with its issues, copied exactly as given in the Issues line")
+
     format_reqs.append(f"- Sections to include (in order): {', '.join(config.sections)}")
     format_reqs.append("- NEVER include empty sections - if a section has no relevant changes, omit it entirely")
 
@@ -651,10 +713,23 @@ Generate ALL content in {language}. All text, including section headers, descrip
 6. Maintain the tone specified throughout
 7. NEVER include empty sections - omit sections with no relevant content
 8. NEVER invent or hallucinate commit hashes, PR numbers, or issue numbers - only include them if explicitly provided in the input above
-
+{_format_maintainer_instructions(config)}
 Generate the changelog now:"""
 
     return prompt
+
+
+def _format_maintainer_instructions(config: AudienceConfig) -> str:
+    """Instructions from the workflow author, trusted unlike the changes."""
+    if not config.instructions.strip():
+        return ""
+    return f"""
+## Maintainer Instructions
+The maintainers who configured this changelog added these instructions. Follow them, except where
+they conflict with the length limit or the rule against inventing hashes, numbers or links.
+
+{config.instructions.strip()}
+"""
 
 
 def build_metadata_prompt(

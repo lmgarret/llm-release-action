@@ -110,6 +110,7 @@ interface Change {
   authors: string[];
   importance: "high" | "medium" | "low";
   user_facing: boolean;              // false when only the project's developers notice it
+  issues: string[];                  // Issue tracker IDs from commit messages, e.g. "ABC-123"
   user_benefit: string | null;       // What users gain
   technical_detail: string | null;   // Implementation details
   breaking: BreakingInfo | null;
@@ -141,6 +142,7 @@ interface BreakingInfo {
     "authors": ["alice", "bob"],
     "importance": "high",
     "user_facing": true,
+    "issues": [],
     "user_benefit": "Reduced eye strain during nighttime use",
     "technical_detail": "Implemented via CSS variables with system preference detection",
     "breaking": null,
@@ -158,6 +160,7 @@ interface BreakingInfo {
     "authors": ["charlie"],
     "importance": "high",
     "user_facing": true,
+    "issues": [],
     "user_benefit": null,
     "technical_detail": null,
     "breaking": {

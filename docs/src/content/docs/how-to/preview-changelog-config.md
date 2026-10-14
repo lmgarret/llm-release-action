@@ -9,13 +9,17 @@ sidebar:
 and prints each audience/language changelog. It needs [uv](https://docs.astral.sh/uv/)
 and your provider's credentials in the environment (for example `ANTHROPIC_API_KEY`).
 
-Put the YAML you would pass as `changelog_config` in a file, then replay a past release:
+Put the YAML you would pass as `changelog_config` in `.local/changelog.yml`, then replay
+a past release:
 
 ```bash
 ./scripts/preview.py --repo ../my-app --from v1.4.0 --to v1.5.0 \
-  --model anthropic/claude-sonnet-5-5 --config changelog.yml \
-  --save-changes changes.json
+  --model anthropic/claude-sonnet-5-5
 ```
+
+The script reads `.local/changelog.yml` unless you pass `--config`, and saves the
+analysis to `.local/changes.json` unless you pass `--save-changes`. `.local/` is
+gitignored: keep preview files there, since they describe the repo you analyzed.
 
 `--from` takes any tag, SHA or branch and must exist. Unlike the action, the script does
 not fall back to the full history when the base ref is missing.
@@ -26,11 +30,11 @@ detect the previous release when `--from` is omitted. See
 
 ## Iterate on the config
 
-Edit `changelog.yml`, then regenerate only the changelogs from the saved analysis:
+Edit `.local/changelog.yml`, then regenerate only the changelogs from the saved analysis:
 
 ```bash
 ./scripts/preview.py --repo ../my-app --model anthropic/claude-sonnet-5-5 \
-  --config changelog.yml --changes changes.json
+  --changes .local/changes.json
 ```
 
 Reusing `--changes` skips commit analysis, so each iteration is cheaper and

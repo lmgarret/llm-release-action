@@ -79,7 +79,14 @@ interface AudienceConfig {
   // Links (repository URL detected from the git remote)
   link_commits?: boolean;
   link_prs?: boolean;
-  link_issues?: boolean;
+  link_issues?: boolean;               // Issue tracker IDs found in commit messages
+  issue_url_template?: string;        // Link for each ID, e.g. "https://linear.app/acme/issue/{id}";
+                                      // without it, IDs are shown as plain text
+
+  // Added by the workflow author
+  instructions?: string;              // Extra instructions for the changelog prompt, max 4000 chars
+  header?: string;                    // Text above the changelog, max 1000 chars
+  footer?: string;                    // Text below the changelog, max 1000 chars
 
   // Metadata (written to the metadata output)
   generate_title?: boolean;           // Release title
@@ -118,6 +125,14 @@ type Category = "breaking" | "security" | "feature" | "improvement"
   [project type](/llm-release-action/reference/project-types/). Tests, load tests, CI,
   local development setup and bugs that only occurred in development are not user-facing.
   Breaking changes always are.
+- `link_issues`: the analysis picks up issue tracker IDs (`ABC-123`) from commit messages,
+  including footers such as `Fixes ABC-123` and branch names in merge commits. IDs that
+  don't appear verbatim in the commits are dropped.
+- `instructions`: followed by the model unless they conflict with the length limit or ask
+  it to invent hashes, numbers or links.
+- `header`, `footer`: added verbatim after generation, with `{version}` and
+  `{previous_version}` filled in. They count toward `validation.max_length`. Not supported
+  with `output_format: json`.
 - `exclude_patterns`: patterns with nested quantifiers such as `(a+)+` or longer than 200 characters are rejected; matching times out after 1 second.
 - `internal_domain_patterns`: invalid regexes are silently skipped.
 - `validation.max_length` below the default: see [Limit changelog length](/llm-release-action/how-to/limit-changelog-length/) for how it is enforced.

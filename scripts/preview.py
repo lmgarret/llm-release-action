@@ -18,8 +18,9 @@
 """Preview the changelogs the action would generate for a repo, without GitHub.
 
 Runs the same pipeline as the action against a local checkout and prints each
-audience/language changelog. Save Phase 1 output with --save-changes, then pass
-it back with --changes to iterate on changelog_config without re-analyzing.
+audience/language changelog. Phase 1 output is saved to .local/changes.json (or
+--save-changes); pass it back with --changes to iterate on changelog_config
+without re-analyzing. Keep local files in the gitignored .local/ folder.
 """
 
 import contextlib
@@ -40,6 +41,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 SRC_DIR = Path(__file__).resolve().parent.parent / "src"
+# Gitignored home for local preview files, which often describe private repos
+LOCAL_DIR = SRC_DIR.parent / ".local"
+DEFAULT_CONFIG = LOCAL_DIR / "changelog.yml"
+DEFAULT_CHANGES = LOCAL_DIR / "changes.json"
 sys.path.insert(0, str(SRC_DIR))
 
 import analyze  # noqa: E402
@@ -230,7 +235,9 @@ def run_full(verbose: bool) -> Preview:
 
 def generate_changelogs(saved: dict[str, Any], config_yaml: str) -> dict[str, dict[str, str]]:
     """Phases 2 and 3 plus sanitizing, with the same settings main() reads."""
-    changelog_config = ChangelogConfig.from_yaml(config_yaml)
+    changelog_config = analyze.reserve_frame_length(
+        ChangelogConfig.from_yaml(config_yaml), release_name_of(saved), saved["current_version"]
+    )
     changelogs, _ = analyze.run_phase2(
         model=analyze.get_env("INPUT_MODEL"),
         changes=saved["changes"],
@@ -250,6 +257,7 @@ def generate_changelogs(saved: dict[str, Any], config_yaml: str) -> dict[str, di
             changelog_config=changelog_config,
             version=release_name_of(saved),
         )
+    changelogs = analyze.add_frames(changelogs, changelog_config, release_name_of(saved), saved["current_version"])
     return analyze.sanitize_changelogs(changelogs, changelog_config)
 
 
@@ -339,7 +347,9 @@ def main(
     tag_pattern: Annotated[
         str, typer.Option(help="Glob matching release tags, e.g. 'demo-*'. Default: v1.2.3-style tags.")
     ] = "",
-    config: Annotated[Path | None, typer.Option(help="changelog_config YAML file.")] = None,
+    config: Annotated[
+        Path | None, typer.Option(help="changelog_config YAML file. Default: .local/changelog.yml if it exists.")
+    ] = None,
     project_type: Annotated[str, typer.Option(help="auto, library, api, service, app or generic.")] = "auto",
     context_files: Annotated[
         str, typer.Option(help="context_files patterns, e.g. /README.md,docs/glossary.md.")
@@ -348,7 +358,8 @@ def main(
         list[str] | None, typer.Option("--input", help="Any other action input as NAME=VALUE (repeatable).")
     ] = None,
     save_changes_to: Annotated[
-        Path | None, typer.Option("--save-changes", help="Save Phase 1 changes to this JSON file.")
+        Path | None,
+        typer.Option("--save-changes", help="Save Phase 1 changes to this JSON file. Default: .local/changes.json."),
     ] = None,
     changes_file: Annotated[
         Path | None, typer.Option("--changes", help="Reuse saved changes; only regenerate changelogs.")
@@ -358,9 +369,11 @@ def main(
     verbose: Annotated[bool, typer.Option(help="Show the action's own logs.")] = False,
 ) -> None:
     """Preview changelogs for REPO between --from and --to using a changelog config."""
+    if config is None and DEFAULT_CONFIG.is_file():
+        config = DEFAULT_CONFIG
     config_yaml = read_config(config.resolve() if config else None)
     saved = load_changes(changes_file.resolve()) if changes_file else None
-    save_path = save_changes_to.resolve() if save_changes_to else None
+    save_path = save_changes_to.resolve() if save_changes_to else DEFAULT_CHANGES
     out_path = out_dir.resolve() if out_dir else None
     if not repo.is_dir():
         fail(f"no such directory: {repo}")
@@ -390,7 +403,8 @@ def main(
         console.print(f"[yellow]Warning:[/] {warning}")
     render_changelogs(preview.changelogs, raw)
 
-    if save_path and not saved:
+    if not saved:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
         save_changes(preview, save_path)
         console.print(f"[green]Saved {len(preview.changes)} changes to[/] {save_path}")
     if out_path:

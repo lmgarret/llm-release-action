@@ -171,11 +171,12 @@ Other: [count]
 
 <CHANGES>
 List changes with this format (one per line):
-[category|importance] Title | Description | user_facing:yes{% if include_commits %} | commits:sha1,sha2{% endif %}
+[category|importance] Title | Description | user_facing:yes{% if include_commits %} | commits:sha1,sha2{% endif %} | issues:ABC-123
 
 Categories: feature, fix, breaking, security, improvement, performance, deprecation, infrastructure, docs, other
 Importance: high, medium, low
 user_facing: yes or no - whether people using this release would notice the change
+issues: issue tracker IDs listed for the change in the input. Copy them, never invent any; omit the part when there are none
 {% if user_facing_rules %}
 
 {{ user_facing_rules }}
