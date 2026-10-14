@@ -224,13 +224,6 @@ def validate_versioning(value: str, current_version: str | None) -> list[str]:
     return []
 
 
-def validate_release_name(value: str) -> list[str]:
-    """Validate release_name, which is shown in changelogs and embedded in prompts."""
-    if len(value) > 100 or re.search(r"[\x00-\x1f\x7f]", value):
-        return ["Invalid release_name: must be a single line of at most 100 characters"]
-    return []
-
-
 def validate_language_code(code: str) -> list[str]:
     """Validate a language code against BCP 47 standard.
 
@@ -639,7 +632,6 @@ def validate_inputs(
     versioning: str | None = None,
     base_ref: str | None = None,
     tag_pattern: str | None = None,
-    release_name: str | None = None,
 ) -> InputValidationResult:
     """Validate all action inputs before processing.
 
@@ -663,7 +655,6 @@ def validate_inputs(
         versioning: Versioning scheme ('semver' or 'none')
         base_ref: Git ref the analyzed range starts from
         tag_pattern: Glob matching release tags, for detecting the previous release
-        release_name: Name shown in changelogs for the release
 
     Returns:
         InputValidationResult with valid flag and errors list
@@ -680,9 +671,6 @@ def validate_inputs(
     for name, ref in (("base_ref", base_ref), ("head_ref", head_ref), ("tag_pattern", tag_pattern)):
         if ref:
             errors.extend(validate_git_ref(ref, name))
-
-    if release_name:
-        errors.extend(validate_release_name(release_name))
 
     # Either commits available OR content_override required
     if not content_override:

@@ -13,7 +13,7 @@ containing LLM text are untrusted: [use them safely](/llm-release-action/how-to/
 | `bump` | `string` | `major`, `minor` or `patch`. |
 | `current_version` | `string` | Version compared from (detected or provided). With `versioning: none`, the base ref. |
 | `next_version` | `string` | Next semantic version, e.g. `v1.2.0`. Computed by the action, never taken from the model. Empty with `versioning: none`. |
-| `release_name` | `string` | Name of the release used in changelogs. See the `release_name` input. |
+| `release_name` | `string` | Name of the release used in changelogs: `next_version`, or with `versioning: none`, `head_ref` if it is a tag, else a tag matching `tag_pattern` on `head_ref`, else `Unreleased`. |
 | `changelogs` | `{[audience]: {[lang]: string}}` | Changelog text per audience and language. |
 | `changelog_files` | `{[audience]: {[lang]: string}}` | Path of a file holding each changelog. |
 | `metadata` | `{[audience]: {[lang]: Metadata}}` | Release title, summary and highlights. |

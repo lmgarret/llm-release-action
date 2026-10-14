@@ -1072,7 +1072,6 @@ def main() -> int:
         base_ref_input = os.environ.get("INPUT_BASE_REF", "").strip()
         tag_pattern = os.environ.get("INPUT_TAG_PATTERN", "").strip()
         versioning = get_env("INPUT_VERSIONING", "semver").strip().lower() or "semver"
-        release_name = os.environ.get("INPUT_RELEASE_NAME", "").strip()
         include_diffs = get_env("INPUT_INCLUDE_DIFFS", "**/openapi*.yaml,**/migrations/**,**/*.proto")
         max_commits = get_env_int("INPUT_MAX_COMMITS", 50)
         temperature = get_env_optional_float("INPUT_TEMPERATURE", None)
@@ -1123,7 +1122,6 @@ def main() -> int:
             versioning=versioning,
             base_ref=base_ref_input,
             tag_pattern=tag_pattern,
-            release_name=release_name,
             content_override=content_override if content_override else None,
             changelog_config=changelog_config_str if changelog_config_str else None,
             include_diffs=include_diffs,
@@ -1409,11 +1407,11 @@ def main() -> int:
         # Calculate next version (none without semver) and the name the changelogs use
         next_version = str(current_version.bump(analysis_result.bump)) if current_version else ""
         if next_version:
-            release_label = release_name or next_version
+            release_label = next_version
         elif use_content_override:
-            release_label = release_name or UNRELEASED_LABEL
+            release_label = UNRELEASED_LABEL
         else:
-            release_label = resolve_release_label(head_ref, tag_pattern, release_name)
+            release_label = resolve_release_label(head_ref, tag_pattern)
 
         # === PHASE 2: Changelog Generation ===
         changelogs, metadata = run_phase2(

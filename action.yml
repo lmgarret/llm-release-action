@@ -45,10 +45,6 @@ inputs:
     description: 'semver (default) computes next_version from the suggested bump. none skips version calculation, for repos whose tags are not semver (e.g. timestamps); next_version is then empty.'
     required: false
     default: 'semver'
-  release_name:
-    description: 'Name of the release shown in changelogs. Default: next_version with semver; with versioning none, head_ref if it is a tag, else a tag matching tag_pattern on head_ref, else Unreleased.'
-    required: false
-    default: ''
   include_diffs:
     description: 'File patterns to include in diff analysis (comma-separated)'
     required: false
@@ -206,7 +202,6 @@ runs:
         INPUT_BASE_REF: ${{ inputs.base_ref }}
         INPUT_TAG_PATTERN: ${{ inputs.tag_pattern }}
         INPUT_VERSIONING: ${{ inputs.versioning }}
-        INPUT_RELEASE_NAME: ${{ inputs.release_name }}
         INPUT_INCLUDE_DIFFS: ${{ inputs.include_diffs }}
         INPUT_MAX_COMMITS: ${{ inputs.max_commits }}
         INPUT_TEMPERATURE: ${{ inputs.temperature }}

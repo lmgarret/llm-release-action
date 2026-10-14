@@ -37,9 +37,7 @@ See [Model parameters](/llm-release-action/explanation/model-parameters/).
 | `head_ref` | `HEAD` | Ref to compare to. |
 | `base_ref` | *detected* | Any git ref (tag, SHA, branch) to compare from. With `semver`, the version still comes from `current_version` or the nearest semver tag before it. |
 | `tag_pattern` | *unset* | Glob matching release tags, e.g. `demo-*`. Without `base_ref`, the range starts at the nearest matching tag before `head_ref`. |
-| `versioning` | `semver` | `semver` computes `next_version` from the bump. `none` skips version calculation, for tags that aren't semver. See [Release with non-semver tags](/llm-release-action/how-to/non-semver-tags/). |
-| `release_name` | *derived* | Name of the release in changelogs. Defaults to `next_version`; with `versioning: none`, to `head_ref` if it is a tag, else a tag matching `tag_pattern` on `head_ref`, else `Unreleased`. |
-| `max_commits` | `50` | Number of most recent commits included in full. Older ones are summarized. |
+| `versioning` | `semver` | `semver` computes `next_version` from the bump. `none` skips version calculation, for tags that aren't semver. See [Release with non-semver tags](/llm-release-action/how-to/non-semver-tags/). || `max_commits` | `50` | Number of most recent commits included in full. Older ones are summarized. |
 | `dry_run` | `false` | Only marks the run as a dry run in the log. The action never creates tags or releases itself; your later steps do. |
 | `debug` | `false` | Verbose logging, including prompts and responses. |
 

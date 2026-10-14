@@ -56,9 +56,9 @@ tag, not against itself. The changelogs are titled with the pushed tag.
 - `next_version` is empty. `bump`, `reasoning` and breaking-change detection still work,
   and are still useful to flag a risky release.
 - `current_version` holds the base ref.
-- Changelogs are titled with `release_name`. By default this is `head_ref` when it is a
-  tag, else a tag matching `tag_pattern` on `head_ref`, else `Unreleased`. Set
-  `release_name` to choose it yourself, for example the tag your workflow creates next.
+- Changelogs are titled with `head_ref` when it is a tag, else a tag matching
+  `tag_pattern` on `head_ref`, else `Unreleased`. The `release_name` output holds the
+  title used.
 - `current_version` can't be set: use `base_ref`.
 
 Without `tag_pattern`, the nearest tag of any name is used. For a first release with no

@@ -247,14 +247,12 @@ def resolve_release_range(
     return ReleaseRange(base_ref=base, version=_semver_base(base, current_version))
 
 
-def resolve_release_label(head_ref: str, tag_pattern: str = "", release_name: str = "") -> str:
+def resolve_release_label(head_ref: str, tag_pattern: str = "") -> str:
     """Name of the release being described, for changelogs when there is no next version.
 
-    release_name if set, else head_ref when it is a tag, else a tag matching
-    tag_pattern on head_ref (a tag-triggered run checking out HEAD), else "Unreleased".
+    head_ref when it is a tag, else a tag matching tag_pattern on head_ref
+    (a tag-triggered run checking out HEAD), else "Unreleased".
     """
-    if release_name:
-        return release_name
     if head_ref != "HEAD" and _is_tag(head_ref):
         return head_ref
     tags = tags_pointing_at(head_ref, tag_pattern or "*")
