@@ -139,7 +139,7 @@ def parse_breaking_change(line: str) -> BreakingInfo | None:
 def parse_change_line(line: str, index: int) -> Change | None:
     """Parse a single change line from the CHANGES section.
 
-    Format: [category|importance] Title | Description | commits:sha1,sha2
+    Format: [category|importance] Title | Description | user_facing:yes|no | commits:sha1,sha2
 
     Args:
         line: Single line from CHANGES section
@@ -182,6 +182,7 @@ def parse_change_line(line: str, index: int) -> Change | None:
     title = parts[0] if parts else "Untitled change"
     description = ""
     commits: list[str] = []
+    user_facing = True
     breaking_info: BreakingInfo | None = None
 
     for part in parts[1:]:
@@ -194,6 +195,9 @@ def parse_change_line(line: str, index: int) -> Change | None:
             imp_str = part[11:].strip().lower()
             if imp_str in IMPORTANCE_MAP:
                 importance = IMPORTANCE_MAP[imp_str]
+        elif part.lower().startswith("user_facing:"):
+            # Only an explicit "no" hides a change from user-facing audiences
+            user_facing = part[12:].strip().lower() not in ("no", "false")
         elif part.lower().startswith("breaking:"):
             severity = part[9:].strip().lower()
             breaking_info = BreakingInfo(severity=severity, affected=title, migration=[])
@@ -216,6 +220,7 @@ def parse_change_line(line: str, index: int) -> Change | None:
         commits=commits,
         authors=[],
         importance=importance,
+        user_facing=user_facing,
         breaking=breaking_info,
     )
 

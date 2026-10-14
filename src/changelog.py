@@ -215,6 +215,7 @@ def filter_changes(changes: list[Change], config: AudienceConfig) -> list[Change
     """Filter changes based on audience configuration.
 
     Applies:
+    - user_facing_only (drops changes tagged user_facing:no in Phase 1)
     - exclude_categories
     - exclude_patterns (regex match on title/description) with ReDoS protection
     - exclude_labels
@@ -245,6 +246,9 @@ def filter_changes(changes: list[Change], config: AudienceConfig) -> list[Change
             raise
 
     for change in changes:
+        if config.user_facing_only and not change.user_facing:
+            continue
+
         # Check category exclusion
         if change.category.value in config.exclude_categories:
             continue

@@ -16,6 +16,24 @@ sidebar:
 For every type, a change is breaking only if an existing consumer has to act.
 Irreversibility alone (no rollback or downgrade) does not make a change breaking.
 
+## User-facing changes
+
+The type also decides which changes count as user-facing. Audiences with
+`user_facing_only: true` (the `customer`, `executive` and `marketing` presets) drop the
+others.
+
+| Type | User-facing when it affects |
+|------|-----------------------------|
+| `library` | Public functions, CLI commands and flags, inputs and outputs, behavior, supported versions, published docs |
+| `api` | Requests, responses, behavior, errors, limits or availability clients can observe |
+| `service` | What operators run, configure or observe: settings, deployment, upgrades, logs and metrics |
+| `app` | What users see or feel in the product: screens, features, bugs they could hit, speed, their data |
+| `generic` | Anything people using the release would notice |
+
+For every type, tests, load tests, CI, local development setup, bugs that only occurred
+in development, and refactoring with no change in behavior are not user-facing.
+Breaking changes always are.
+
 ## `auto` detection
 
 With `project_type: auto` (default), one LLM call with `fast_model` classifies the

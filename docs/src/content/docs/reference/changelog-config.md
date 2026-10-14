@@ -21,16 +21,17 @@ changelog_config: |
 
 A preset sets defaults; any field next to it overrides them.
 
-| Preset | Description | Sections | Tone | Internal content check |
-|--------|-------------|----------|------|------------------------|
-| `developer` | Full technical changelog with commits, PRs, contributors | all 10 | professional | skipped |
-| `customer` | User-facing changes, focused on benefits | breaking, features, improvements, fixes | friendly | on |
-| `executive` | High-level business summary | breaking, features | formal | on |
-| `marketing` | Promotional feature announcements | features, improvements | excited | on |
-| `security` | Security-focused with CVE details | security, breaking, fixes | formal | on |
-| `ops` | Operations and DevOps | breaking, infrastructure, performance, security | professional | skipped |
+| Preset | Description | Sections | Tone | User-facing only | Internal content check |
+|--------|-------------|----------|------|------------------|------------------------|
+| `developer` | Full technical changelog with commits, PRs, contributors | all 10 | professional | no | skipped |
+| `customer` | User-facing changes, focused on benefits | breaking, features, improvements, fixes | friendly | yes | on |
+| `executive` | High-level business summary | breaking, features | formal | yes | on |
+| `marketing` | Promotional feature announcements | features, improvements | excited | yes | on |
+| `security` | Security-focused with CVE details | security, breaking, fixes | formal | no | on |
+| `ops` | Operations and DevOps | breaking, infrastructure, performance, security | professional | no | skipped |
 
-Audiences without a preset have the internal content check on.
+Audiences without a preset keep every change (`user_facing_only: false`) and have the
+internal content check on.
 
 ## Schema
 
@@ -58,6 +59,8 @@ interface AudienceConfig {
   summary_only?: boolean;             // Brief summary instead of a full list, default: false
 
   // Filtering
+  user_facing_only?: boolean;         // Drop changes only the project's developers notice, default: false
+                                      // (true for customer, executive and marketing presets)
   exclude_categories?: Category[];    // Hide these categories
   exclude_patterns?: string[];        // Regexes matched against change titles
   exclude_labels?: string[];          // Exclude changes with these labels
@@ -111,6 +114,10 @@ type Category = "breaking" | "security" | "feature" | "improvement"
 
 ## Constraints
 
+- `user_facing_only`: Phase 1 tags each change as user-facing or not, based on the
+  [project type](/llm-release-action/reference/project-types/). Tests, load tests, CI,
+  local development setup and bugs that only occurred in development are not user-facing.
+  Breaking changes always are.
 - `exclude_patterns`: patterns with nested quantifiers such as `(a+)+` or longer than 200 characters are rejected; matching times out after 1 second.
 - `internal_domain_patterns`: invalid regexes are silently skipped.
 - `validation.max_length` below the default: see [Limit changelog length](/llm-release-action/how-to/limit-changelog-length/) for how it is enforced.

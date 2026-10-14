@@ -1103,6 +1103,7 @@ def main() -> int:
                 "title": c.title,
                 "description": c.description,
                 "importance": c.importance.value,
+                "user_facing": c.user_facing,
                 "commits": c.commits,
                 "authors": c.authors,
             }

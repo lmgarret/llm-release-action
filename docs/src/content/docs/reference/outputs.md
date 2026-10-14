@@ -109,6 +109,7 @@ interface Change {
   commits: string[];                 // Commit hashes
   authors: string[];
   importance: "high" | "medium" | "low";
+  user_facing: boolean;              // false when only the project's developers notice it
   user_benefit: string | null;       // What users gain
   technical_detail: string | null;   // Implementation details
   breaking: BreakingInfo | null;
@@ -139,6 +140,7 @@ interface BreakingInfo {
     "commits": ["abc1234", "def5678"],
     "authors": ["alice", "bob"],
     "importance": "high",
+    "user_facing": true,
     "user_benefit": "Reduced eye strain during nighttime use",
     "technical_detail": "Implemented via CSS variables with system preference detection",
     "breaking": null,
@@ -155,6 +157,7 @@ interface BreakingInfo {
     "commits": ["ghi9012"],
     "authors": ["charlie"],
     "importance": "high",
+    "user_facing": true,
     "user_benefit": null,
     "technical_detail": null,
     "breaking": {

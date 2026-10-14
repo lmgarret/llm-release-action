@@ -18,6 +18,7 @@ from models import Change, ChangeCategory
 from project_profile import (
     BREAKING_DEFINITIONS,
     BREAKING_RULES,
+    USER_FACING_RULES,
     ProjectProfile,
     build_file_tree,
     build_profile_prompt,
@@ -177,6 +178,17 @@ class TestPhase1Rules:
     def test_app_rules_exclude_internal_migrations(self) -> None:
         prompt = self.build(ProjectProfile(project_type="app"))
         assert "Internal database migrations, even large or irreversible ones" in prompt
+
+    def test_user_facing_rules_by_default(self) -> None:
+        prompt = self.build()
+        assert "user_facing:yes" in prompt
+        assert USER_FACING_RULES["generic"] in prompt
+
+    @pytest.mark.parametrize("project_type", ["library", "api", "service", "app"])
+    def test_type_user_facing_rules(self, project_type: str) -> None:
+        prompt = self.build(ProjectProfile(project_type=project_type))
+        assert USER_FACING_RULES[project_type] in prompt
+        assert USER_FACING_RULES["generic"] not in prompt
 
 
 class TestFlattenPrompt:

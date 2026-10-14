@@ -38,5 +38,5 @@ changelog_config: |
 ## Remove changes entirely
 
 The check only warns. To keep changes out of an audience's changelog, filter them with
-`exclude_categories`, `exclude_labels`, `exclude_authors` or `exclude_patterns`; see
+`user_facing_only`, `exclude_categories`, `exclude_labels`, `exclude_authors` or `exclude_patterns`; see
 [Generate multi-audience changelogs](/llm-release-action/how-to/multi-audience-changelogs/#filter-what-an-audience-sees).

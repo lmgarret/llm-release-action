@@ -108,6 +108,51 @@ BREAKING_DEFINITIONS: dict[str, str] = {
     "Internal database migrations are NOT breaking",
 }
 
+# Who notices a change, per project type. Changes only the project's own
+# developers notice are kept out of user-facing changelogs (customer, executive,
+# marketing presets).
+_NEVER_USER_FACING = """- Tests, test fixtures, load tests and their configuration
+- CI, build, linting and local development setup (dev containers, seed data, scripts)
+- Bugs that only occurred in development or test environments (dev-only modes, local setups)
+- Internal refactoring, code moves and renames with no change in behavior"""
+
+USER_FACING_RULES: dict[str, str] = {
+    "library": f"""Users are developers who install this project and call it from their own code.
+
+user_facing:yes - the change affects how they use it: public functions, CLI commands and flags,
+action inputs and outputs, behavior, errors, performance, supported versions, published docs.
+
+user_facing:no - only the project's own maintainers notice it:
+{_NEVER_USER_FACING}""",
+    "api": f"""Users are external clients calling this API over the network.
+
+user_facing:yes - the change affects requests, responses, behavior, errors, limits,
+performance or availability that clients can observe, or the published API docs.
+
+user_facing:no - only the API's own developers notice it:
+{_NEVER_USER_FACING}
+- Internal storage or infrastructure changes with no effect clients can observe""",
+    "service": f"""Users are operators who deploy and run this software themselves.
+
+user_facing:yes - the change affects what operators run, configure or observe: settings,
+deployment, upgrades, logs and metrics, resource usage, and the software's behavior.
+
+user_facing:no - only the project's own developers notice it:
+{_NEVER_USER_FACING}""",
+    "app": f"""Users are people using the application.
+
+user_facing:yes - users can see or feel the change in the product: new or changed screens,
+features and workflows, fixed bugs they could hit, speed, reliability, data they see.
+
+user_facing:no - users would never notice it:
+{_NEVER_USER_FACING}
+- Database migrations, infrastructure and monitoring with no visible effect""",
+    "generic": f"""user_facing:yes - people using the released software would notice the change.
+
+user_facing:no - only the project's own developers notice it:
+{_NEVER_USER_FACING}""",
+}
+
 
 PROFILE_PROMPT = """Classify this software project by who consumes its releases.
 
@@ -284,3 +329,8 @@ def get_breaking_rules(project_type: str) -> str | None:
 def get_breaking_definition(project_type: str) -> str | None:
     """One-line breaking-change definition for the flatten prompt, or None for generic."""
     return BREAKING_DEFINITIONS.get(project_type)
+
+
+def get_user_facing_rules(project_type: str) -> str:
+    """Rules for tagging a change as user-facing; generic rules for unknown types."""
+    return USER_FACING_RULES.get(project_type, USER_FACING_RULES["generic"])

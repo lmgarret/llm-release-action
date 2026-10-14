@@ -66,6 +66,7 @@ class Change:
     commits: list[str] = field(default_factory=list)
     authors: list[str] = field(default_factory=list)
     importance: Importance = Importance.MEDIUM
+    user_facing: bool = True  # False when only the project's own developers notice it
     user_benefit: str | None = None
     technical_detail: str | None = None
     breaking: BreakingInfo | None = None

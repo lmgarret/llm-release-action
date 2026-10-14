@@ -69,6 +69,7 @@ class AudienceConfig:
     summary_only: bool = False
 
     # Filtering
+    user_facing_only: bool = False  # Drop changes only the project's developers notice
     exclude_categories: list[str] = field(default_factory=list)
     exclude_patterns: list[str] = field(default_factory=list)
     exclude_labels: list[str] = field(default_factory=list)
@@ -292,5 +293,8 @@ def validate_changelog_config(config: dict[str, Any]) -> list[str]:
         if skip_check := settings.get("skip_internal_check"):
             if not isinstance(skip_check, bool):
                 errors.append(f"{audience}: skip_internal_check must be a boolean")
+
+        if "user_facing_only" in settings and not isinstance(settings["user_facing_only"], bool):
+            errors.append(f"{audience}: user_facing_only must be a boolean")
 
     return errors

@@ -9,7 +9,7 @@ import subprocess
 from dataclasses import dataclass
 
 from content_scanner import sanitize_content
-from project_profile import ProjectProfile, get_breaking_rules
+from project_profile import ProjectProfile, get_breaking_rules, get_user_facing_rules
 from prompts import Phase1Config, render_phase1_prompt
 from untrusted import UNTRUSTED_NOTICE, normalize, wrap
 
@@ -374,6 +374,7 @@ def build_semantic_analysis_prompt(
         generate_changelog=generate_changelog,
         include_commits=include_commits,
         context_content=context_content,
+        user_facing_rules=get_user_facing_rules(project_profile.project_type if project_profile else "generic"),
     )
     if project_profile is not None:
         config.project_type = project_profile.project_type

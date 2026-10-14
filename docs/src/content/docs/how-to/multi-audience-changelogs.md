@@ -88,6 +88,11 @@ changelog_config: |
     exclude_patterns: ["^chore", "typo"]
 ```
 
+The `customer`, `executive` and `marketing` presets also drop changes that people using
+the release would not notice, such as test, CI or local development changes
+(`user_facing_only: true`). Set `user_facing_only: false` to keep them, or `true` on any
+other audience to drop them.
+
 `exclude_patterns` are regexes matched against change titles. Patterns prone to
 catastrophic backtracking (such as `(a+)+`) or longer than 200 characters are rejected.
 

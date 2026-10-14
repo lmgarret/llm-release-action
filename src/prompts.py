@@ -171,10 +171,18 @@ Other: [count]
 
 <CHANGES>
 List changes with this format (one per line):
-[category|importance] Title | Description{% if include_commits %} | commits:sha1,sha2{% endif %}
+[category|importance] Title | Description | user_facing:yes{% if include_commits %} | commits:sha1,sha2{% endif %}
 
 Categories: feature, fix, breaking, security, improvement, performance, deprecation, infrastructure, docs, other
 Importance: high, medium, low
+user_facing: yes or no - whether people using this release would notice the change
+{% if user_facing_rules %}
+
+{{ user_facing_rules }}
+
+Judge from what the change actually affects (files, diffs, environment), not from how it is worded.
+Breaking changes are always user_facing:yes. When unsure, use user_facing:yes.
+{% endif %}
 
 {% if detail_level == "full" %}
 Include ALL changes with descriptions.
@@ -406,6 +414,7 @@ class Phase1Config:
     project_type: str = "generic"  # Project type from project profiling
     project_consumers: str = ""  # Who consumes the project's releases
     breaking_rules: str | None = None  # Type-specific breaking rules (None = generic rules)
+    user_facing_rules: str = ""  # Rules for the user_facing tag of each change
 
 
 @dataclass
@@ -503,6 +512,7 @@ def render_phase1_prompt(config: Phase1Config) -> str:
         project_type=config.project_type,
         project_consumers=project_consumers,
         breaking_rules=config.breaking_rules,
+        user_facing_rules=config.user_facing_rules,
     )
 
 

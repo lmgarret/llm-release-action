@@ -42,6 +42,41 @@ class TestFilterChanges:
         assert len(result) == 2
         assert all(c.category != ChangeCategory.INFRASTRUCTURE for c in result)
 
+    def test_user_facing_only_drops_internal_changes(self) -> None:
+        changes = [
+            Change(id="1", category=ChangeCategory.FIX, title="Login fix", description=""),
+            Change(id="2", category=ChangeCategory.FIX, title="Load-test config", description="", user_facing=False),
+        ]
+
+        result = filter_changes(changes, AudienceConfig(name="test", user_facing_only=True))
+
+        assert [c.id for c in result] == ["1"]
+
+    def test_internal_changes_kept_by_default(self) -> None:
+        changes = [
+            Change(id="1", category=ChangeCategory.FIX, title="Load-test config", description="", user_facing=False)
+        ]
+
+        assert filter_changes(changes, AudienceConfig(name="test")) == changes
+
+    @pytest.mark.parametrize(
+        ("preset", "expected"),
+        [
+            ("customer", True),
+            ("executive", True),
+            ("marketing", True),
+            ("developer", False),
+            ("ops", False),
+            ("security", False),
+        ],
+    )
+    def test_user_facing_only_preset_defaults(self, preset: str, expected: bool) -> None:
+        assert AudienceConfig.from_dict("test", {"preset": preset}).user_facing_only is expected
+
+    def test_user_facing_only_overrides_preset(self) -> None:
+        config = AudienceConfig.from_dict("test", {"preset": "customer", "user_facing_only": False})
+        assert config.user_facing_only is False
+
     def test_filter_by_labels(self) -> None:
         """Test filtering changes by excluded labels."""
         changes = [

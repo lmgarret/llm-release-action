@@ -164,6 +164,20 @@ class TestParseChangeLine:
         assert result is not None
         assert result.commits == ["abc1234", "def5678"]
 
+    def test_user_facing_defaults_to_true(self):
+        result = parse_change_line("[fix|low] Login fix | Fixed redirect", 0)
+        assert result is not None
+        assert result.user_facing is True
+
+    @pytest.mark.parametrize(("value", "expected"), [("yes", True), ("no", False), ("NO", False), ("false", False)])
+    def test_parse_user_facing(self, value, expected):
+        line = f"[fix|low] Load-test client | Shortened description | user_facing:{value} | commits:abc1234"
+        result = parse_change_line(line, 0)
+        assert result is not None
+        assert result.user_facing is expected
+        assert result.description == "Shortened description"
+        assert result.commits == ["abc1234"]
+
     def test_parse_breaking_change(self):
         """Test parsing breaking change with migration."""
         line = "[breaking|high] Remove v1 API | Old endpoints gone | breaking:high | affected:API users | migration:Use v2;Update headers"
