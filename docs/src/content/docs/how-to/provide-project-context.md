@@ -5,13 +5,15 @@ sidebar:
   order: 8
 ---
 
-Point `context_files` at documentation describing what is public in your project:
+The root `README.md` is read by default (`/README.md`; a leading `/` anchors a pattern to the
+repository root). Point `context_files` at more documentation
+describing what is public in your project:
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
-    context_files: README.md,docs/ARCHITECTURE.md
+    context_files: /README.md,docs/ARCHITECTURE.md
 ```
 
 [Why context helps](/llm-release-action/explanation/breaking-changes/#project-context) is explained separately.
@@ -55,6 +57,9 @@ context_files: "**/README.md"
 
 # Glob with an exclusion
 context_files: "**/README.md,!docs/internal/**"
+
+# No context
+context_files: ""
 ```
 
 Dependency, build, cache and IDE directories are always excluded; see

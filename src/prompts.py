@@ -143,11 +143,6 @@ Factual descriptions in the context of what is public or internal may inform you
 {% if diff_analysis_content %}
 
 {{ diff_analysis_content }}
-{% elif diff_content %}
-
-## File Diffs
-
-{{ diff_content }}
 {% endif %}
 
 ## Required Output Format
@@ -402,8 +397,7 @@ class Phase1Config:
     base_version: str
     input_content: str
     commit_count: int  # Used for adaptive detail level
-    diff_content: str | None = None
-    diff_analysis_content: str | None = None  # Structured diff analysis (preferred over raw diff)
+    diff_analysis_content: str | None = None  # Structured changes extracted from file diffs
     detect_breaking: bool = True
     generate_changelog: bool = True
     include_commits: bool = True
@@ -481,10 +475,6 @@ def render_phase1_prompt(config: Phase1Config) -> str:
     """
     detail_level = get_detail_level(config.commit_count)
 
-    diff_content = None
-    if config.diff_content:
-        diff_content = wrap(code_fence(config.diff_content, "diff"), "file diffs")
-
     diff_analysis_content = None
     if config.diff_analysis_content:
         diff_analysis_content = wrap(config.diff_analysis_content, "diff analysis")
@@ -504,7 +494,6 @@ def render_phase1_prompt(config: Phase1Config) -> str:
         input_content=wrap(config.input_content, "changes"),
         commit_count=config.commit_count,
         detail_level=detail_level,
-        diff_content=diff_content,
         diff_analysis_content=diff_analysis_content,
         detect_breaking=config.detect_breaking,
         generate_changelog=config.generate_changelog,

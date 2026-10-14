@@ -1,23 +1,27 @@
 ---
 title: Troubleshoot common errors
-description: Fixes for missing tags, rate limits, authentication errors, invalid bumps, empty or hallucinated changelogs.
+description: Fixes for missing tags or versions, rate limits, authentication errors, invalid bumps, empty or hallucinated changelogs.
 sidebar:
   order: 14
 ---
 
-Set `debug: true` to log the full prompts and responses.
+To log the full prompts and responses, enable GitHub's debug logging: re-run the job
+with **Enable debug logging**, or set the `ACTIONS_STEP_DEBUG` secret or variable to `true`.
 
-## "No semver tags found"
+## No tag found, or `next_version` is empty
 
-The repository has no tag like `v1.2.3`, or uses non-semver tags. Pass
-`current_version: v1.0.0` (or `v0.0.0` for a first release).
+With no tag matching `tag_pattern` before `head_ref`, the whole history is analyzed and
+the action warns. If the base tag isn't semver, `next_version` is empty. Pass
+`current_version: v1.0.0` (or `v0.0.0` for a first release) to get one, or set
+`tag_pattern` to match your release tags. See
+[Release with non-semver tags](/llm-release-action/how-to/non-semver-tags/).
 
 ## Rate limit errors (429)
 
 The action retries with exponential backoff. If limits persist:
 
 - use a model with higher rate limits,
-- lower `max_commits` to send less data,
+- narrow `diffs` or lower `diff_max_lines` to send less data,
 - consider AWS Bedrock, which usually has higher limits than direct APIs.
 
 ## Authentication errors (401/403)
@@ -32,8 +36,8 @@ Secrets aren't passed to workflows triggered by pull requests from forks.
 
 ## A parameter is rejected
 
-For example `` `temperature` is deprecated for this model ``. The action sends parameters
-as configured; remove the one the model rejects. See
+For example `` `temperature` is deprecated for this model ``. The action sends
+`llm_params` as configured; remove the one the model rejects. See
 [Tune models and cost](/llm-release-action/how-to/tune-models-and-cost/#fix-a-rejected-parameter).
 
 ## "LLM returned empty response"
@@ -43,14 +47,14 @@ The model spent its `max_tokens` on thinking. Raise `max_tokens` or lower the re
 ## Invalid bump response
 
 The model didn't return a valid bump. This is rare and usually comes from a very short
-history or unusual commit formats. Add signal with `include_diffs` or
-`context_files`, or try a more capable `model_analysis`.
+history or unusual commit formats. Add signal with `diffs` or `context_files`, or try a
+more capable `model`.
 
 ## The changelog is empty
 
 Check that:
 
-- there are commits between `current_version` and `head_ref`,
+- there are commits between the base ref (the `current_version` output) and `head_ref`,
 - `actions/checkout` uses `fetch-depth: 0`,
 - commit messages are meaningful (not just "update" or "fix").
 

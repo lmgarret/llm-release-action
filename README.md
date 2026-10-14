@@ -5,6 +5,9 @@ A GitHub Action that uses an LLM to analyze commits, suggest semantic version bu
 📖 **Documentation: <https://lmgarret.github.io/llm-release-action/>**
 (also as plain text for LLMs: [`llms.txt`](https://lmgarret.github.io/llm-release-action/llms.txt), [`llms-full.txt`](https://lmgarret.github.io/llm-release-action/llms-full.txt))
 
+> **Upgrading from v1?** v2 merges and removes several inputs. See
+> [Migrating from v1](https://lmgarret.github.io/llm-release-action/reference/inputs/#migrating-from-v1).
+
 ## Features
 
 - **Semantic version analysis**: suggests `major`, `minor` or `patch` from commits and diffs; a major bump needs explicit evidence.
@@ -22,7 +25,7 @@ Create a GitHub Release with a generated changelog on every push to `main`:
   with:
     fetch-depth: 0  # Required: full git history for commit analysis
 
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   id: release
   with:
     model: anthropic/claude-sonnet-5
@@ -45,7 +48,7 @@ Create a GitHub Release with a generated changelog on every push to `main`:
 ## Changelogs for several audiences
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   id: release
   with:
     model: anthropic/claude-sonnet-5

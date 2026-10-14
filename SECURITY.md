@@ -15,12 +15,13 @@ This action sends the following data to your configured LLM provider:
 
 - Commit messages (sanitized)
 - Commit metadata (hashes, counts)
-- File diffs for configured patterns (openapi, migrations, proto files by default)
+- File diffs matching `diffs` (openapi, migrations, proto files by default)
+- Context files matching `context_files` (`README.md` by default)
 
 **For repositories with sensitive commit messages, consider:**
 - Using a self-hosted LLM
-- Configuring `include_diffs` to exclude sensitive files
-- Reviewing the prompt in debug mode before production use
+- Narrowing `diffs` and `context_files`, or excluding sensitive files with `!` patterns
+- Reviewing the prompts with GitHub debug logging (`ACTIONS_STEP_DEBUG`) before production use
 
 ### Prompt Injection Protection
 
@@ -46,8 +47,8 @@ them; instead it keeps that text as data from end to end:
    an allowlist of structural tags because that format is meant to be
    inserted as markup; Markdown and plain text are output unchanged.
 
-`content_override` is additionally pattern-scanned (and optionally
-LLM-checked) and rejected on high-risk findings.
+`content_override` is additionally pattern-scanned and rejected on high-risk
+findings.
 
 **Treat every output as untrusted text.** Pass outputs to later steps through
 `env:` or use `changelog_files`; never interpolate `${{ steps.<id>.outputs.* }}`
@@ -63,7 +64,7 @@ JavaScript code. Escape Markdown changelogs for whatever renders them.
 ### Supply Chain Security
 
 - Pin this action to a full commit SHA (`@<sha> # v1.2.0`) and let Dependabot
-  bump it; `@v1` moves with every release
+  bump it; `@v2` moves with every release
 - Review the action source before use
 - All Python dependencies, transitive ones included, are pinned with hashes and
   installed with `--require-hashes`

@@ -41,6 +41,10 @@ only chooses the bump, which must be exactly `major`, `minor` or `patch`.
 
 ## Current version detection
 
-Without `current_version`, the latest semver tag is used. With no semver tag the run
-fails; pass `current_version` (e.g. `v0.0.0` for a first release, which then gets
-`v0.1.0` or `v1.0.0`).
+The version to bump from is `current_version` when set, else the base tag: the nearest
+tag matching `tag_pattern` before `head_ref`, if it is semver (`v1.2.3`, `1.2.3`,
+`v1.2.3-rc.1`). Without either, `next_version` is empty and a notice is logged; `bump`
+and the changelogs are still produced.
+
+With no matching tag, the whole history is analyzed. Pass `current_version: v0.0.0` for
+a first release, which then gets `v0.1.0` or `v1.0.0`.

@@ -12,12 +12,13 @@ from diff_analyzer import (
     FileDiff,
     analyze_diffs,
     extract_changes_from_diff,
-    filter_diffs,
     format_diff_for_prompt,
     get_file_priority,
     limit_diffs,
     parse_unified_diff,
     prioritize_diffs,
+    select_diffs,
+    select_paths,
 )
 
 # Sample diffs for testing
@@ -161,77 +162,40 @@ class TestParseUnifiedDiff:
         assert isinstance(result, list)
 
 
-class TestFilterDiffs:
-    """Tests for filter_diffs function."""
+class TestSelectDiffs:
+    """Tests for select_diffs and select_paths."""
 
-    def test_filter_out_lock_files(self):
-        """Filter out lock files."""
+    def test_selects_matching_files(self):
+        """Keeps only files matching the patterns."""
         diffs = [
+            FileDiff(path="api/openapi.yaml", added_lines=["line"]),
+            FileDiff(path="db/migrations/001_init.sql", added_lines=["line"]),
             FileDiff(path="src/main.py", added_lines=["line"]),
-            FileDiff(path="package-lock.json", added_lines=["line"]),
-            FileDiff(path="yarn.lock", added_lines=["line"]),
-            FileDiff(path="Gemfile.lock", added_lines=["line"]),
         ]
 
-        result = filter_diffs(diffs, "*.lock,package-lock.json")
+        result = select_diffs(diffs, "**/openapi*.yaml,**/migrations/**")
 
-        assert len(result) == 1
-        assert result[0].path == "src/main.py"
+        assert [d.path for d in result] == ["api/openapi.yaml", "db/migrations/001_init.sql"]
 
-    def test_filter_out_node_modules(self):
-        """Filter out node_modules."""
-        diffs = [
-            FileDiff(path="src/main.py", added_lines=["line"]),
-            FileDiff(path="node_modules/lodash/index.js", added_lines=["line"]),
-            FileDiff(path="node_modules/express/lib/router.js", added_lines=["line"]),
+    def test_double_star_matches_root(self):
+        """**/ also matches files at the repository root."""
+        assert select_paths(["openapi.yaml", "service.proto"], "**/openapi*.yaml,**/*.proto") == [
+            "openapi.yaml",
+            "service.proto",
         ]
 
-        result = filter_diffs(diffs, "node_modules/**")
+    def test_negation_excludes(self):
+        """A ! pattern removes files an earlier pattern selected."""
+        paths = ["src/main.py", "package-lock.json", "yarn.lock", "node_modules/lib/index.js"]
 
-        assert len(result) == 1
-        assert result[0].path == "src/main.py"
+        assert select_paths(paths, "**,!*.lock,!package-lock.json,!node_modules/**") == ["src/main.py"]
 
-    def test_filter_with_negation_patterns(self):
-        """Filter with negation patterns."""
-        diffs = [
-            FileDiff(path="dist/main.js", added_lines=["line"]),
-            FileDiff(path="dist/important.js", added_lines=["line"]),
-            FileDiff(path="src/app.js", added_lines=["line"]),
-        ]
+    def test_empty_patterns_select_nothing(self):
+        """Empty patterns select no files."""
+        diffs = [FileDiff(path="src/main.py", added_lines=["line"])]
 
-        # Exclude all dist except important.js
-        result = filter_diffs(diffs, "dist/**,!dist/important.js")
-
-        # Note: pathspec handles negation - this may keep important.js
-        paths = [d.path for d in result]
-        assert "src/app.js" in paths
-
-    def test_empty_patterns_returns_all_diffs(self):
-        """Empty patterns returns all diffs."""
-        diffs = [
-            FileDiff(path="src/main.py", added_lines=["line"]),
-            FileDiff(path="package-lock.json", added_lines=["line"]),
-        ]
-
-        result = filter_diffs(diffs, "")
-        assert len(result) == 2
-
-        result = filter_diffs(diffs, "   ")
-        assert len(result) == 2
-
-    def test_multiple_patterns_work_together(self):
-        """Multiple patterns work together."""
-        diffs = [
-            FileDiff(path="src/main.py", added_lines=["line"]),
-            FileDiff(path="package-lock.json", added_lines=["line"]),
-            FileDiff(path="node_modules/lib/index.js", added_lines=["line"]),
-            FileDiff(path="dist/bundle.js", added_lines=["line"]),
-        ]
-
-        result = filter_diffs(diffs, "*.lock,node_modules/**,dist/**,package-lock.json")
-
-        assert len(result) == 1
-        assert result[0].path == "src/main.py"
+        assert select_diffs(diffs, "") == []
+        assert select_diffs(diffs, "   ") == []
 
 
 class TestGetFilePriority:
@@ -326,21 +290,6 @@ class TestPrioritizeDiffs:
 class TestLimitDiffs:
     """Tests for limit_diffs function."""
 
-    def test_respects_max_files_limit(self):
-        """Respects max_files limit."""
-        diffs = [
-            FileDiff(path="file1.py", added_lines=["a"]),
-            FileDiff(path="file2.py", added_lines=["a"]),
-            FileDiff(path="file3.py", added_lines=["a"]),
-            FileDiff(path="file4.py", added_lines=["a"]),
-        ]
-
-        kept, warnings = limit_diffs(diffs, max_files=2, max_lines=1000)
-
-        assert len(kept) == 2
-        assert kept[0].path == "file1.py"
-        assert kept[1].path == "file2.py"
-
     def test_respects_max_lines_limit(self):
         """Respects max_lines limit."""
         diffs = [
@@ -349,46 +298,32 @@ class TestLimitDiffs:
             FileDiff(path="file3.py", added_lines=["a"] * 10),  # 10 lines
         ]
 
-        kept, warnings = limit_diffs(diffs, max_files=100, max_lines=15)
+        kept, warnings = limit_diffs(diffs, max_lines=15)
 
         assert len(kept) == 1
         assert kept[0].path == "file1.py"
 
-    def test_returns_warnings_about_skipped_files(self):
-        """Returns warnings about skipped files."""
-        diffs = [
-            FileDiff(path="file1.py", added_lines=["a"]),
-            FileDiff(path="file2.py", added_lines=["a"]),
-            FileDiff(path="file3.py", added_lines=["a"]),
-        ]
+    def test_warnings_include_count_of_skipped_files(self):
+        """Warnings include count of skipped files."""
+        diffs = [FileDiff(path=f"file{i}.py", added_lines=["a"] * 10) for i in range(10)]
 
-        kept, warnings = limit_diffs(diffs, max_files=1, max_lines=1000)
+        kept, warnings = limit_diffs(diffs, max_lines=30)
 
+        assert len(kept) == 3
         assert len(warnings) == 1
-        assert "skipped 2 files" in warnings[0]
+        assert "skipped 7 files" in warnings[0]
 
-    def test_zero_limits_mean_no_limit(self):
-        """Zero limits effectively mean very high limit (checks at boundary)."""
+    def test_no_warning_within_budget(self):
+        """No warning when everything fits."""
         diffs = [
             FileDiff(path="file1.py", added_lines=["a"]),
             FileDiff(path="file2.py", added_lines=["a"]),
         ]
 
-        # Note: The implementation checks >= for files and > for lines
-        # So we test with very high limits instead
-        kept, warnings = limit_diffs(diffs, max_files=1000, max_lines=1000)
+        kept, warnings = limit_diffs(diffs, max_lines=1000)
 
         assert len(kept) == 2
         assert warnings == []
-
-    def test_warnings_include_count_of_skipped_files(self):
-        """Warnings include count of skipped files."""
-        diffs = [FileDiff(path=f"file{i}.py", added_lines=["a"]) for i in range(10)]
-
-        kept, warnings = limit_diffs(diffs, max_files=3, max_lines=1000)
-
-        assert len(kept) == 3
-        assert any("7 files" in w for w in warnings)
 
 
 class TestFormatDiffForPrompt:
@@ -516,8 +451,7 @@ class TestAnalyzeDiffs:
 
         result = analyze_diffs(
             diff_text=SIMPLE_DIFF,
-            exclude_patterns="",
-            max_files=10,
+            patterns="**",
             max_lines=1000,
             llm_caller=mock_llm,
         )
@@ -529,8 +463,8 @@ class TestAnalyzeDiffs:
         assert "New import statement" in result.extracted_changes
         mock_llm.assert_called()
 
-    def test_respects_all_filters_and_limits(self):
-        """Respects all filters and limits."""
+    def test_respects_patterns_and_limits(self):
+        """Respects patterns and the line budget."""
         # Create a diff with multiple files including one that should be excluded
         package_lock_diff = """\
 diff --git a/package-lock.json b/package-lock.json
@@ -547,31 +481,29 @@ index 1234567..abcdefg 100644
 
         result = analyze_diffs(
             diff_text=diff_text,
-            exclude_patterns="package-lock.json",
-            max_files=1,
-            max_lines=1000,
+            patterns="**,!package-lock.json",
+            max_lines=1,
             llm_caller=mock_llm,
         )
 
-        # Should have filtered and limited
+        # Should have selected and limited
         assert result.diffs_processed == 1
-        assert len(result.warnings) >= 1  # Should have warning about filtered or limited files
+        assert any("line limit" in w for w in result.warnings)
 
-    def test_returns_warnings(self):
-        """Returns warnings."""
-        mock_llm = Mock(return_value="<CHANGES><added></added><removed></removed><modified></modified></CHANGES>")
+    def test_no_matching_files(self):
+        """No LLM call and no warning when no file matches."""
+        mock_llm = Mock()
 
-        # Test with exclusion that filters all files
         result = analyze_diffs(
             diff_text=SIMPLE_DIFF,
-            exclude_patterns="**/*.py",
-            max_files=10,
+            patterns="**/*.proto",
             max_lines=1000,
             llm_caller=mock_llm,
         )
 
-        assert any("excluded" in w.lower() or "filtered" in w.lower() for w in result.warnings)
         assert result.diffs_processed == 0
+        assert result.warnings == []
+        mock_llm.assert_not_called()
 
     def test_empty_diff_returns_appropriate_result(self):
         """Empty diff returns appropriate result."""
@@ -579,8 +511,7 @@ index 1234567..abcdefg 100644
 
         result = analyze_diffs(
             diff_text="",
-            exclude_patterns="",
-            max_files=10,
+            patterns="**",
             max_lines=1000,
             llm_caller=mock_llm,
         )
@@ -620,8 +551,7 @@ index 1234567..abcdefg 100644
 
         result = analyze_diffs(
             diff_text=diff_with_openapi,
-            exclude_patterns="",
-            max_files=10,
+            patterns="**",
             max_lines=1000,
             llm_caller=tracking_llm,
         )

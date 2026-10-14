@@ -7,7 +7,7 @@ from unittest.mock import patch
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from analyze import run_phase2, run_phase3
+from analyze import LLMSettings, run_phase2, run_phase3
 from changelog import build_changelog_prompt, build_retry_prompt, get_length_budget
 from config import AudienceConfig, ChangelogConfig, ValidationConfig, validate_changelog_config
 from models import Change, ChangeCategory
@@ -110,10 +110,7 @@ class TestPhase2Retry:
                 changelog_config=changelog_config(config),
                 version="v1.2.0",
                 base_url=None,
-                temperature=None,
-                max_tokens=1000,
-                timeout=10,
-                debug=False,
+                llm=LLMSettings(max_tokens=1000, timeout=10),
             )
         return changelogs[config.name]["en"], prompts
 

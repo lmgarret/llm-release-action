@@ -21,7 +21,7 @@ repository secret named `ANTHROPIC_API_KEY` with your key.
 ## 2. Tag a starting version
 
 The action compares `HEAD` with the latest semver tag. If your repository has no tag
-yet, create one on an older commit so there is something to compare:
+yet, create one on an older commit so the release covers only the commits after it:
 
 ```bash
 git tag v0.1.0 <commit-sha>
@@ -29,7 +29,8 @@ git push origin v0.1.0
 ```
 
 :::tip
-No tags and don't want to create one? Pass `current_version: v0.0.0` instead. See
+No tags and don't want to create one? Skip this step: the whole history is analyzed.
+Pass `current_version: v0.0.0` to get a suggested version. See
 [Handle a first release or pre-releases](/llm-release-action/how-to/first-release-and-prereleases/).
 :::
 
@@ -57,7 +58,7 @@ jobs:
         with:
           fetch-depth: 0  # The action needs the full git history
 
-      - uses: lmgarret/llm-release-action@v1
+      - uses: lmgarret/llm-release-action@v2
         id: release
         with:
           model: anthropic/claude-sonnet-5

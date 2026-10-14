@@ -23,7 +23,7 @@ export default defineConfig({
         starlightLlmsTxt({
           projectName: 'LLM Release Action',
           description:
-            'A GitHub Action (lmgarret/llm-release-action@v1) that uses any LiteLLM-supported model to analyze commits, suggest a semver bump and generate multi-audience, multi-language changelogs.',
+            'A GitHub Action (lmgarret/llm-release-action@v2) that uses any LiteLLM-supported model to analyze commits, suggest a semver bump and generate multi-audience, multi-language changelogs.',
           details: [
             'Key facts:',
             '',

@@ -1,43 +1,43 @@
 ---
 title: Tune models and cost
-description: Use different models per phase, set reasoning effort or thinking, raise max_tokens, and monitor token usage.
+description: Use a cheaper model for internal calls, set reasoning effort or other model parameters, raise max_tokens, and monitor token usage.
 sidebar:
   order: 13
 ---
 
-## Use a different model per phase
+## Use a cheaper model for internal calls
 
-`model` is the default. Override it per phase:
+`model` does the main work: consolidation, analysis and changelog writing. `fast_model`
+handles the cheap internal calls: project type detection, context file summarization and
+diff extraction. It defaults to `model`.
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
-    model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
-    model_analysis: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0   # Phase 1: version and change extraction
-    model_changelog: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0   # Phase 2: changelog writing
-    model_profile: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0     # project type detection
-    validation_model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0  # LLM injection checks
+    model: bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+    fast_model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
-Changelog quality depends most on `model_changelog`: smaller models tend to ignore
-formatting instructions. See [model recommendations](/llm-release-action/reference/providers/#model-recommendations).
+Changelog quality depends most on `model`: smaller models tend to ignore formatting
+instructions. See [model recommendations](/llm-release-action/reference/providers/#model-recommendations).
 
 ## Set reasoning effort
 
-Pass any provider parameter with `extra_llm_params`. LiteLLM translates
-`reasoning_effort` into Anthropic's adaptive thinking plus `output_config.effort`
-(`low`, `medium`, `high`, `xhigh`, `max`):
+Pass any provider parameter with `llm_params`, a JSON object merged into every call.
+LiteLLM translates `reasoning_effort` into Anthropic's adaptive thinking plus
+`output_config.effort` (`low`, `medium`, `high`, `xhigh`, `max`):
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: anthropic/claude-sonnet-5-5
-    model_analysis: anthropic/claude-haiku-5-5
-    extra_llm_params: '{"reasoning_effort": "low"}'
+    fast_model: anthropic/claude-haiku-5-5
+    llm_params: '{"reasoning_effort": "low"}'
 ```
 
-Don't combine it with the `thinking` input: both set `thinking`, and the request carries
-conflicting values.
+Other examples: `'{"thinking": {"type": "adaptive"}}'`, `'{"temperature": 0.2}'`.
+Don't set both `reasoning_effort` and `thinking`: both end up in `thinking`, and the
+request carries conflicting values.
 
 ## Fix "LLM returned empty response"
 
@@ -50,9 +50,9 @@ max_tokens: 8000
 
 ## Fix a rejected parameter
 
-The action sends parameters exactly as configured, so a parameter the model doesn't
-accept fails with the provider's error naming it. Remove it from the workflow. For
-example, current Anthropic models reject `temperature`; leave it unset for them.
+The action sends `llm_params` exactly as configured, so a parameter the model doesn't
+accept fails with the provider's error naming it. Remove it from `llm_params`. For
+example, current Anthropic models reject `temperature`.
 See [Model parameters](/llm-release-action/explanation/model-parameters/).
 
 ## Monitor usage
@@ -68,7 +68,6 @@ The `usage` output has calls, tokens and latency per model:
 
 ## Reduce cost
 
-- Lower `max_commits` (default 50): older commits are summarized instead of sent in full.
-- Keep `analyze_diffs` off, or lower `diff_max_files`.
-- Use a small model for `model_analysis`, `model_profile` and `validation_model`.
+- Use a small model for `fast_model`.
+- Narrow `diffs`, lower `diff_max_lines`, or set `diffs: ""` to skip diff analysis.
 - Set `project_type` explicitly to skip the detection call.

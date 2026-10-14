@@ -1,24 +1,24 @@
 ---
 title: Handle a first release or pre-releases
-description: Release a repository with no semver tags yet, and understand how bumps apply to alpha and beta versions.
+description: Release a repository with no tags yet, and understand how bumps apply to alpha and beta versions.
 sidebar:
   order: 12
 ---
 
 ## First release (no tags)
 
-Without a semver tag the action can't find a starting point and fails with
-"No semver tags found". Pass `current_version`:
+Without a release tag, the action analyzes the whole history of `head_ref` and warns
+that no tag was found. There is no version to bump from, so `next_version` is empty. Pass
+`current_version` to get one:
 
 ```yaml
-- uses: lmgarret/llm-release-action@v1
+- uses: lmgarret/llm-release-action@v2
   with:
     model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
     current_version: v0.0.0
 ```
 
-The whole history is analyzed and the action suggests `v0.1.0` or `v1.0.0` depending on
-the changes. If your tags aren't semver, see
+The action then suggests `v0.1.0` or `v1.0.0` depending on the changes. If your tags aren't semver, see
 [Release with non-semver tags](/llm-release-action/how-to/non-semver-tags/).
 
 ## Pre-releases

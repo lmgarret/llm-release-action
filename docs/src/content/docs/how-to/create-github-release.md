@@ -24,7 +24,7 @@ jobs:
         with:
           fetch-depth: 0  # Required: full git history for commit analysis
 
-      - uses: lmgarret/llm-release-action@v1
+      - uses: lmgarret/llm-release-action@v2
         id: release
         with:
           model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
@@ -53,4 +53,4 @@ writes one English changelog under the `default` audience, so its file is at
 - **Different provider**: swap the `model` and credentials, see [Configure your LLM provider](/llm-release-action/how-to/configure-provider/).
 - **Keep a floating major tag** (`v1` pointing to the latest `v1.x.y`): after the release, run `git tag -f "${NEXT_VERSION%%.*}" && git push origin "${NEXT_VERSION%%.*}" --force`. Skip it for pre-releases.
 - **Release notes in another job**: `changelog_files` live under `$RUNNER_TEMP` and are only readable within the same job. Upload the file with `actions/upload-artifact` and download it in the other job.
-- **Manual approval**: trigger on `workflow_dispatch` only and add a `dry_run` input, as in [Your first release](/llm-release-action/tutorials/first-release/).
+- **Manual approval**: trigger on `workflow_dispatch` only and add a boolean workflow input that skips the release step, as in [Your first release](/llm-release-action/tutorials/first-release/).

@@ -5,9 +5,9 @@ files by importance, and extracts structured changes using LLM.
 
 Features:
 - Unified diff parsing (via unidiff library)
-- Gitignore-style pattern exclusions (via pathspec)
+- Gitignore-style file selection (via pathspec)
 - Priority-based file ordering (API specs > migrations > config > other)
-- Token/file limits with warnings
+- Line budget with warnings
 - LLM-based change extraction with structured output
 """
 
@@ -48,6 +48,11 @@ class DiffAnalysisResult:
     diffs_processed: int
     total_lines: int
     warnings: list[str] = field(default_factory=list)
+
+
+# Files whose diffs are analyzed by default: API contracts and schema
+# migrations, where breaking changes hide without a commit message saying so
+DEFAULT_DIFF_PATTERNS = "**/openapi*.yaml,**/migrations/**,**/*.proto"
 
 
 # Priority patterns for file ordering
@@ -206,29 +211,24 @@ def parse_unified_diff(diff_text: str) -> list[FileDiff]:
     return diffs
 
 
-def filter_diffs(diffs: list[FileDiff], exclude_patterns: str) -> list[FileDiff]:
-    """Filter diffs using gitignore-style exclusion patterns.
+def select_paths(paths: list[str], patterns: str) -> list[str]:
+    """Keep the paths matching comma-separated gitignore-style patterns ("!" negates)."""
+    spec = pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, parse_patterns(patterns))
+    return [path for path in paths if spec.match_file(path)]
+
+
+def select_diffs(diffs: list[FileDiff], patterns: str) -> list[FileDiff]:
+    """Keep the diffs of files matching gitignore-style patterns.
 
     Args:
-        diffs: List of FileDiff objects to filter.
-        exclude_patterns: Comma-separated gitignore-style patterns.
+        diffs: List of FileDiff objects to select from.
+        patterns: Comma-separated gitignore-style patterns; "!" negates.
 
     Returns:
-        Filtered list of FileDiff objects.
+        Diffs of matching files.
     """
-    patterns = parse_patterns(exclude_patterns)
-    if not patterns:
-        return diffs
-
-    # Create pathspec for matching
-    spec = pathspec.PathSpec.from_lines(GitIgnoreSpecPattern, patterns)
-
-    filtered: list[FileDiff] = []
-    for diff in diffs:
-        if not spec.match_file(diff.path):
-            filtered.append(diff)
-
-    return filtered
+    selected = set(select_paths([diff.path for diff in diffs], patterns))
+    return [diff for diff in diffs if diff.path in selected]
 
 
 def get_file_priority(path: str) -> int:
@@ -272,16 +272,14 @@ def prioritize_diffs(diffs: list[FileDiff]) -> list[FileDiff]:
 
 def limit_diffs(
     diffs: list[FileDiff],
-    max_files: int,
     max_lines: int,
 ) -> tuple[list[FileDiff], list[str]]:
-    """Apply file and line limits to diffs.
+    """Apply the line budget to diffs.
 
-    Keeps diffs until either limit is reached, maintaining priority order.
+    Keeps diffs until the budget is reached, maintaining priority order.
 
     Args:
         diffs: List of FileDiff objects (should be pre-sorted by priority).
-        max_files: Maximum number of files to include.
         max_lines: Maximum total lines of changes to include.
 
     Returns:
@@ -292,11 +290,6 @@ def limit_diffs(
     total_lines = 0
 
     for diff in diffs:
-        if len(kept) >= max_files:
-            remaining = len(diffs) - len(kept)
-            warnings.append(f"Reached file limit ({max_files}), skipped {remaining} files")
-            break
-
         if total_lines + diff.line_count > max_lines:
             remaining = len(diffs) - len(kept)
             warnings.append(f"Reached line limit ({max_lines}), skipped {remaining} files")
@@ -444,8 +437,7 @@ def _combine_extracted_changes(changes_list: list[str]) -> str:
 
 def analyze_diffs(
     diff_text: str,
-    exclude_patterns: str,
-    max_files: int,
+    patterns: str,
     max_lines: int,
     llm_caller: Callable[[str], str],
 ) -> DiffAnalysisResult:
@@ -453,15 +445,14 @@ def analyze_diffs(
 
     Pipeline:
     1. Parse unified diff
-    2. Filter by exclusion patterns
+    2. Select files matching the patterns
     3. Prioritize by file type
-    4. Apply limits
+    4. Apply the line budget
     5. Extract changes via LLM
 
     Args:
         diff_text: Raw git diff output (unified format).
-        exclude_patterns: Comma-separated gitignore-style exclusion patterns.
-        max_files: Maximum number of files to process.
+        patterns: Comma-separated gitignore-style patterns selecting files.
         max_lines: Maximum total lines of changes to process.
         llm_caller: Function that calls the LLM and returns response.
 
@@ -480,24 +471,17 @@ def analyze_diffs(
             warnings=["No valid diffs found in input"],
         )
 
-    # Step 2: Filter by exclusion patterns
-    filtered_diffs = filter_diffs(diffs, exclude_patterns)
-    if len(filtered_diffs) < len(diffs):
-        warnings.append(f"Filtered out {len(diffs) - len(filtered_diffs)} files by exclusion patterns")
-
-    if not filtered_diffs:
-        return DiffAnalysisResult(
-            extracted_changes="",
-            diffs_processed=0,
-            total_lines=0,
-            warnings=warnings + ["All files excluded by patterns"],
-        )
+    # Step 2: Select files matching the patterns
+    selected_diffs = select_diffs(diffs, patterns)
+    if not selected_diffs:
+        # The patterns name specific files: most releases touch none of them
+        return DiffAnalysisResult(extracted_changes="", diffs_processed=0, total_lines=0)
 
     # Step 3: Prioritize
-    prioritized_diffs = prioritize_diffs(filtered_diffs)
+    prioritized_diffs = prioritize_diffs(selected_diffs)
 
-    # Step 4: Apply limits
-    limited_diffs, limit_warnings = limit_diffs(prioritized_diffs, max_files, max_lines)
+    # Step 4: Apply the line budget
+    limited_diffs, limit_warnings = limit_diffs(prioritized_diffs, max_lines)
     warnings.extend(limit_warnings)
 
     if not limited_diffs:
