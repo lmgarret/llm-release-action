@@ -16,6 +16,7 @@ import yaml
 from config import validate_changelog_config
 from content_scanner import ValidationMode, handle_scan_result, scan_content_override
 from project_profile import VALID_PROJECT_TYPE_INPUTS
+from version import VERSIONING_SCHEMES
 
 # Maximum pattern length to reduce ReDoS attack surface
 MAX_PATTERN_LENGTH = 200
@@ -191,6 +192,36 @@ def validate_version_format(version: str) -> list[str]:
     if not re.match(r"^v?\d+\.\d+\.\d+(-[\w.]+)?$", version):
         errors.append(f"Invalid version format: {version}. Expected: v1.2.3 or 1.2.3-alpha.1")
     return errors
+
+
+def validate_git_ref(value: str, name: str) -> list[str]:
+    """Validate a git ref or tag glob passed to git commands.
+
+    Refs reach git as separate argv entries, so the risk is not shell injection
+    but a value git parses as an option (leading "-") or that breaks git output
+    parsing (whitespace, control characters).
+
+    Args:
+        value: Ref, SHA or glob pattern
+        name: Input name for error messages
+
+    Returns:
+        List of validation errors (empty if valid)
+    """
+    if value.startswith("-"):
+        return [f"Invalid {name}: '{value}' must not start with '-'"]
+    if len(value) > 255 or re.search(r"[\s\x00-\x1f\x7f]", value):
+        return [f"Invalid {name}: must be at most 255 characters with no whitespace or control characters"]
+    return []
+
+
+def validate_versioning(value: str, current_version: str | None) -> list[str]:
+    """Validate the versioning scheme and that current_version is only used with semver."""
+    if value not in VERSIONING_SCHEMES:
+        return [f"Invalid versioning: '{value}'. Valid values: {', '.join(VERSIONING_SCHEMES)}"]
+    if value == "none" and current_version:
+        return ["current_version only applies to versioning: semver. Use base_ref to set where the range starts."]
+    return []
 
 
 def validate_language_code(code: str) -> list[str]:
@@ -598,6 +629,9 @@ def validate_inputs(
     thinking: str | None = None,
     extra_llm_params: str | None = None,
     project_type: str | None = None,
+    versioning: str | None = None,
+    base_ref: str | None = None,
+    tag_pattern: str | None = None,
 ) -> InputValidationResult:
     """Validate all action inputs before processing.
 
@@ -618,6 +652,9 @@ def validate_inputs(
         thinking: Thinking mode ('', 'adaptive' or 'off')
         extra_llm_params: JSON object of extra litellm.completion kwargs
         project_type: Project type ('auto', 'library', 'api', 'service', 'app', 'generic')
+        versioning: Versioning scheme ('semver' or 'none')
+        base_ref: Git ref the analyzed range starts from
+        tag_pattern: Glob matching release tags, for detecting the previous release
 
     Returns:
         InputValidationResult with valid flag and errors list
@@ -627,6 +664,13 @@ def validate_inputs(
     # Version format validation
     if current_version:
         errors.extend(validate_version_format(current_version))
+
+    if versioning:
+        errors.extend(validate_versioning(versioning, current_version))
+
+    for name, ref in (("base_ref", base_ref), ("head_ref", head_ref), ("tag_pattern", tag_pattern)):
+        if ref:
+            errors.extend(validate_git_ref(ref, name))
 
     # Either commits available OR content_override required
     if not content_override:

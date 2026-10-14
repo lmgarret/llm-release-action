@@ -27,12 +27,24 @@ inputs:
     required: false
     default: 'auto'
   current_version:
-    description: 'Current version to compare from. Auto-detects from latest semver tag if not provided.'
+    description: 'Current semver version to bump from. Also the ref to compare from when base_ref is not set. Auto-detects from latest semver tag if not provided.'
     required: false
   head_ref:
     description: 'Head ref to compare to'
     required: false
     default: 'HEAD'
+  base_ref:
+    description: 'Git ref (tag, SHA or branch) to compare from. Overrides current_version and tag detection for the range; with semver, the version still comes from current_version or the nearest semver tag.'
+    required: false
+    default: ''
+  tag_pattern:
+    description: 'Glob matching release tags (e.g. demo-*). When base_ref is not set, the range starts at the nearest matching tag before head_ref.'
+    required: false
+    default: ''
+  versioning:
+    description: 'semver (default) computes next_version from the suggested bump. none skips version calculation, for repos whose tags are not semver (e.g. timestamps); next_version is then empty.'
+    required: false
+    default: 'semver'
   include_diffs:
     description: 'File patterns to include in diff analysis (comma-separated)'
     required: false
@@ -115,11 +127,14 @@ outputs:
     description: 'Bump type (major, minor, patch)'
     value: ${{ steps.analyze.outputs.bump }}
   current_version:
-    description: 'The version compared from'
+    description: 'The version compared from (the base ref with versioning none)'
     value: ${{ steps.analyze.outputs.current_version }}
   next_version:
-    description: 'Calculated next semantic version'
+    description: 'Calculated next semantic version (empty with versioning none)'
     value: ${{ steps.analyze.outputs.next_version }}
+  release_name:
+    description: 'Name of the release used in changelogs'
+    value: ${{ steps.analyze.outputs.release_name }}
   changelogs:
     description: 'JSON object with changelogs: {audience: {language: markdown}}. Default: {default: {en: "..."}}. Schema: https://lmgarret.github.io/llm-release-action/reference/outputs/. Untrusted text: pass it to scripts via env, never interpolate it into run or script.'
     value: ${{ steps.analyze.outputs.changelogs }}
@@ -184,6 +199,9 @@ runs:
         INPUT_PROJECT_TYPE: ${{ inputs.project_type }}
         INPUT_CURRENT_VERSION: ${{ inputs.current_version }}
         INPUT_HEAD_REF: ${{ inputs.head_ref }}
+        INPUT_BASE_REF: ${{ inputs.base_ref }}
+        INPUT_TAG_PATTERN: ${{ inputs.tag_pattern }}
+        INPUT_VERSIONING: ${{ inputs.versioning }}
         INPUT_INCLUDE_DIFFS: ${{ inputs.include_diffs }}
         INPUT_MAX_COMMITS: ${{ inputs.max_commits }}
         INPUT_TEMPERATURE: ${{ inputs.temperature }}
