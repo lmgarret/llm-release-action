@@ -16,6 +16,11 @@ uv run --with deepeval pytest evals/ -v -m eval
 DeepEval isn't in `uv.lock`: it holds back some of the action's own dependencies, so it is
 added on top for the run only.
 
+Set `TEST_MODEL` (the model under test) and `EVAL_MODEL` (the judge) to any litellm model
+string to override the default Bedrock models. The evals send no `temperature` unless
+`EVAL_TEMPERATURE` is set, since many current models (Sonnet 5+, Opus 4.7+, Haiku 5.5)
+reject it.
+
 It covers:
 
 - version bump accuracy (patch, minor, major),

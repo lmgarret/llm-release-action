@@ -1,12 +1,19 @@
-"""Pytest configuration for DeepEval tests."""
+"""Pytest configuration for DeepEval tests.
+
+Environment variables:
+- EVAL_MODEL: litellm model that judges output quality.
+- TEST_MODEL: litellm model under test (analysis/changelog generation).
+- EVAL_TEMPERATURE: sent as ``temperature`` on every eval call when set.
+  Unset by default because many current models (Sonnet 5+, Opus 4.7+,
+  Haiku 5.5) reject it. Parameters pass through as configured; a model that
+  rejects one fails with the provider's error.
+"""
 
 import os
 import sys
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-from model_capabilities import supports_sampling_params  # noqa: E402
 
 # Model configuration:
 # - EVAL_MODEL: Sonnet 4.5 for judging output quality (smarter)
@@ -32,13 +39,10 @@ def get_test_model() -> str:
     return os.environ.get("TEST_MODEL", DEFAULT_TEST_MODEL)
 
 
-def completion_kwargs(model: str, temperature: float, max_tokens: int) -> dict:
-    """Build litellm.completion kwargs, omitting params the model rejects.
-
-    Lets EVAL_MODEL / TEST_MODEL point at a model that has removed sampling
-    parameters without editing every call site.
-    """
+def completion_kwargs(model: str, max_tokens: int) -> dict:
+    """Build litellm.completion kwargs; adds temperature only if EVAL_TEMPERATURE is set."""
     kwargs = {"model": model, "max_tokens": max_tokens}
-    if supports_sampling_params(model):
-        kwargs["temperature"] = temperature
+    temperature = os.environ.get("EVAL_TEMPERATURE")
+    if temperature:
+        kwargs["temperature"] = float(temperature)
     return kwargs
