@@ -76,6 +76,10 @@ Create a GitHub Release with a generated changelog on every push to `main`:
 
 The documentation source is in [`docs/`](docs/). Run it locally with `cd docs && npm install && npm run dev`.
 
+## Contributing
+
+Report bugs and request features in [GitHub issues](https://github.com/lmgarret/llm-release-action/issues). See [CONTRIBUTING.md](CONTRIBUTING.md) to propose changes and [SECURITY.md](SECURITY.md) to report a vulnerability.
+
 ## License
 
 MIT
