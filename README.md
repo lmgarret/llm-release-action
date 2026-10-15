@@ -1,4 +1,10 @@
+<p align="center">
+  <img src="docs/src/assets/logo.svg" alt="LLM Release Action logo" width="96">
+</p>
+
 # LLM Release Action
+
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15512/badge)](https://www.bestpractices.dev/projects/15512)
 
 A GitHub Action that uses an LLM to analyze commits, suggest semantic version bumps, and generate changelogs for several audiences and languages.
 
