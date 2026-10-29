@@ -33,6 +33,9 @@ Check the environment variables for your provider:
 - **Anthropic**: `ANTHROPIC_API_KEY`, or the federation variables. A failed federation
   exchange always reads `Authentication failed`; the reason is in the Claude Console's
   [authentication history](https://platform.claude.com/settings/workload-identity-federation?tab=history).
+  `match_subject_prefix` there means the rule's subject isn't the token's `sub`: see
+  [the subject format](/llm-release-action/how-to/configure-provider/#without-an-api-key).
+  Also check that the rule's audience is `https://api.anthropic.com`, with no trailing slash.
 
 Secrets aren't passed to workflows triggered by pull requests from forks.
 

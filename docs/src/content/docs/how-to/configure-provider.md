@@ -39,8 +39,19 @@ step instead of static keys.
 With [Workload Identity Federation](https://platform.claude.com/docs/en/manage-claude/wif-providers/github-actions),
 the action trades the job's GitHub OIDC token for a short-lived Anthropic token, so no
 key is stored in GitHub. In the Claude Console, under **Workload identity**, connect a
-GitHub Actions workload: it creates a service account and a federation rule. Match the
-rule to your repository and release branch, with audience `https://api.anthropic.com`.
+GitHub Actions workload: it creates a service account and a federation rule. Set the
+rule's audience to `https://api.anthropic.com`, with no trailing slash.
+
+The rule's subject must equal the `sub` claim of the job's token, which depends on the
+repository and the job:
+
+- A job with `environment: release` gets `...:environment:release`; other jobs get
+  `...:ref:refs/heads/main` (or `:pull_request` for pull requests).
+- With immutable subjects, it starts with `repo:<owner>@<owner_id>/<repo>@<repo_id>`
+  rather than `repo:<owner>/<repo>`. `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`
+  shows which one your repository uses, in `sub_claim_prefix`.
+
+For example: `repo:octo-org@9919/octo-repo@1296269:environment:release`.
 
 ```yaml
 permissions:
