@@ -36,6 +36,7 @@ These are internal details that can change freely:
 - `flatten.py` - change consolidation
 - `map_reduce.py` - large input processing
 - `content_scanner.py` - security scanning
+- `federation.py` - Anthropic Workload Identity Federation token exchange
 
 ### Internal Functions
 - All functions starting with underscore (`_validate*`, `_parse*`, `_extract*`)

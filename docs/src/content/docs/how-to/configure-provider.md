@@ -34,6 +34,35 @@ step instead of static keys.
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
+### Without an API key
+
+With [Workload Identity Federation](https://platform.claude.com/docs/en/manage-claude/wif-providers/github-actions),
+the action trades the job's GitHub OIDC token for a short-lived Anthropic token, so no
+key is stored in GitHub. In the Claude Console, under **Workload identity**, connect a
+GitHub Actions workload: it creates a service account and a federation rule. Match the
+rule to your repository and release branch, with audience `https://api.anthropic.com`.
+
+```yaml
+permissions:
+  contents: read
+  id-token: write # lets the job request an OIDC token
+
+steps:
+  - uses: lmgarret/llm-release-action@v2
+    with:
+      model: anthropic/claude-sonnet-5
+    env:
+      ANTHROPIC_FEDERATION_RULE_ID: fdrl_...
+      ANTHROPIC_ORGANIZATION_ID: 00000000-0000-0000-0000-000000000000
+      ANTHROPIC_SERVICE_ACCOUNT_ID: svac_...
+      ANTHROPIC_WORKSPACE_ID: wrkspc_... # only when the rule covers several workspaces
+```
+
+These IDs aren't secrets. Leave `ANTHROPIC_API_KEY` unset: the action stops with an
+error when both are set. The Anthropic token stays inside the action's process, and is
+renewed with a fresh GitHub token before it expires. Outside GitHub Actions, set
+`ANTHROPIC_IDENTITY_TOKEN_FILE` or `ANTHROPIC_IDENTITY_TOKEN` to your provider's OIDC token.
+
 ## OpenAI
 
 ```yaml

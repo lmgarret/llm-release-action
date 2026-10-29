@@ -38,6 +38,9 @@ or dependency would run there too.
   upstream release can't slip in. uv itself is installed with `pip install --require-hashes`,
   and the action uses no third-party actions.
 - Release tags (`vX.Y.Z`) and their releases are immutable.
+- With Anthropic, [Workload Identity Federation](/llm-release-action/how-to/configure-provider/#without-an-api-key)
+  replaces the key with a token that expires within minutes and only works for the
+  repositories and branches its federation rule matches.
 
 ## Prompt injection defense
 
