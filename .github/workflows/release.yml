@@ -20,7 +20,7 @@ jobs:
     permissions:
       contents: read
       # Anthropic Workload Identity Federation: the action exchanges this job's
-      # OIDC token (sub repo:lmgarret/llm-release-action:environment:release)
+      # OIDC token (sub repo:lmgarret@9049104/llm-release-action@1354658885:environment:release)
       # for a short-lived Anthropic token, so no API key is stored.
       id-token: write
     outputs:
