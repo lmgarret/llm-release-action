@@ -27,6 +27,7 @@ from config import AudienceConfig, ChangelogConfig
 from content_scanner import handle_scan_result, scan_content_override, truncate_for_context
 from context_loader import DEFAULT_CONTEXT_FILES, ContextResult, detect_staleness, load_context_files
 from diff_analyzer import DEFAULT_DIFF_PATTERNS, analyze_diffs, select_paths
+from federation import refresh_auth_token
 from flatten import flatten_changes
 from input_validation import validate_inputs
 from map_reduce import determine_version_from_changes, process_large_input
@@ -275,6 +276,8 @@ def call_llm_with_retry(
 
     last_error = None
     for attempt in range(max_retries):
+        # Outside the try: a failed exchange is not an LLM error to retry
+        refresh_auth_token()
         try:
             start_time = time.perf_counter()
 
@@ -871,6 +874,10 @@ def main() -> int:
 
         print("Inputs validated successfully")
         log_group_end()
+
+        # Fail before any git work when federation is misconfigured
+        if refresh_auth_token():
+            print("Authenticated to Anthropic with Workload Identity Federation")
 
         # Safe to parse now that validate_inputs has vetted the JSON
         llm = LLMSettings(

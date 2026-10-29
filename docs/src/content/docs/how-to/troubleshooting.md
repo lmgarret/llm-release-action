@@ -30,7 +30,9 @@ Check the environment variables for your provider:
 
 - **AWS Bedrock**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
 - **OpenAI**: `OPENAI_API_KEY`
-- **Anthropic**: `ANTHROPIC_API_KEY`
+- **Anthropic**: `ANTHROPIC_API_KEY`, or the federation variables. A failed federation
+  exchange always reads `Authentication failed`; the reason is in the Claude Console's
+  [authentication history](https://platform.claude.com/settings/workload-identity-federation?tab=history).
 
 Secrets aren't passed to workflows triggered by pull requests from forks.
 

@@ -19,6 +19,10 @@ jobs:
     environment: release
     permissions:
       contents: read
+      # Anthropic Workload Identity Federation: the action exchanges this job's
+      # OIDC token (sub repo:lmgarret/llm-release-action:environment:release)
+      # for a short-lived Anthropic token, so no API key is stored.
+      id-token: write
     outputs:
       next_version: ${{ steps.llm.outputs.next_version }}
     steps:
@@ -39,7 +43,9 @@ jobs:
             developer:
               preset: developer
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
 
       - name: Locate changelog
         id: changelog

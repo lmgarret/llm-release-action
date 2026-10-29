@@ -10,7 +10,7 @@ Any provider [LiteLLM supports](https://docs.litellm.ai/docs/providers) works. E
 | Provider | Model strings | Credentials |
 |----------|---------------|-------------|
 | AWS Bedrock | `bedrock/us.anthropic.claude-sonnet-5-v1:0`, `bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0`, `bedrock/us.amazon.nova-pro-v1:0` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` |
-| Anthropic | `anthropic/claude-sonnet-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY` |
+| Anthropic | `anthropic/claude-sonnet-5`, `anthropic/claude-opus-5`, `anthropic/claude-sonnet-4-5-20250929` | `ANTHROPIC_API_KEY`, or [Workload Identity Federation](/llm-release-action/how-to/configure-provider/#without-an-api-key) |
 | OpenAI | `openai/gpt-4.1`, `openai/gpt-4o`, `openai/gpt-4o-mini` | `OPENAI_API_KEY` |
 | Azure OpenAI | `azure/<deployment-name>` | `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION` |
 
