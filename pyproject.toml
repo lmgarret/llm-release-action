@@ -5,7 +5,7 @@ description = "Analyze commits, suggest semantic version bumps, and generate mul
 requires-python = ">=3.11"
 dependencies = [
     # LiteLLM for multi-provider LLM abstraction
-    "litellm==1.103.0",
+    "litellm==1.103.1",
     # AWS SDK for Bedrock support. Pinned for reproducibility alongside litellm; bump both deliberately.
     "boto3==1.43.103",
     # YAML/JSON config parsing
