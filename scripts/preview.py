@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "typer",
-#     "litellm==1.103.0",
+#     "litellm==1.103.1",
 #     "boto3==1.43.103",
 #     "pyyaml>=6.0.3",
 #     "langcodes>=3.5.1",
